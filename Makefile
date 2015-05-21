@@ -290,6 +290,11 @@ ifeq ($(USE_CUDNN), 1)
 	COMMON_FLAGS += -DUSE_CUDNN
 endif
 
+# Connectal configuration
+ifeq ($(USE_CONNECTAL), 1)
+	COMMON_FLAGS += -DUSE_CONNECTAL
+endif
+
 # CPU-only configuration
 ifeq ($(CPU_ONLY), 1)
 	OBJS := $(PROTO_OBJS) $(CXX_OBJS)

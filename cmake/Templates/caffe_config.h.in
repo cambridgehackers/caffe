@@ -14,6 +14,9 @@
 /* NVIDA cuDNN */
 #cmakedefine CPU_ONLY
 
+/* use simple unwrapped convolution processing */
+cmakedefine USE_CONNECTAL
+
 /* Test device */
 #define CUDA_TEST_DEVICE ${CUDA_TEST_DEVICE}
 
