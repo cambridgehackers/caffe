@@ -11,6 +11,7 @@
 
 namespace caffe {
 
+#define ConvolutionParameter_Engine_CONNECTAL ConvolutionParameter_Engine_CAFFE
 // Get convolution layer according to engine.
 template <typename Dtype>
 shared_ptr<Layer<Dtype> > GetConvolutionLayer(
@@ -21,19 +22,20 @@ shared_ptr<Layer<Dtype> > GetConvolutionLayer(
 #ifdef USE_CUDNN
     engine = ConvolutionParameter_Engine_CUDNN;
 #endif
-#ifdef USE_CONNECTAL
+//#ifdef USE_CONNECTAL
     engine = ConvolutionParameter_Engine_CONNECTAL;
-#endif
+//#endif
   }
+//#ifdef USE_CONNECTAL
+  if (engine == ConvolutionParameter_Engine_CONNECTAL) {
+    return shared_ptr<Layer<Dtype> >(new ConnectalConvolutionLayer<Dtype>(param));
+  } else
+//#endif
   if (engine == ConvolutionParameter_Engine_CAFFE) {
     return shared_ptr<Layer<Dtype> >(new ConvolutionLayer<Dtype>(param));
 #ifdef USE_CUDNN
   } else if (engine == ConvolutionParameter_Engine_CUDNN) {
     return shared_ptr<Layer<Dtype> >(new CuDNNConvolutionLayer<Dtype>(param));
-#endif
-#ifdef USE_CONNECTAL
-  } else if (engine == ConvolutionParameter_Engine_CONNECTAL) {
-    return shared_ptr<Layer<Dtype> >(new ConnectalConvolutionLayer<Dtype>(param));
 #endif
   } else {
     LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
