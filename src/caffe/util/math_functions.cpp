@@ -7,6 +7,7 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/util/rng.hpp"
 
+long jca_counters[200];
 namespace caffe {
 
 template<>
@@ -16,7 +17,7 @@ void caffe_cpu_gemm<float>(const CBLAS_TRANSPOSE TransA,
     float* C) {
   int lda = (TransA == CblasNoTrans) ? K : M;
   int ldb = (TransB == CblasNoTrans) ? N : K;
-  cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
+  jca_counters[11]++; cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
       ldb, beta, C, N);
 }
 
@@ -27,7 +28,7 @@ void caffe_cpu_gemm<double>(const CBLAS_TRANSPOSE TransA,
     double* C) {
   int lda = (TransA == CblasNoTrans) ? K : M;
   int ldb = (TransB == CblasNoTrans) ? N : K;
-  cblas_dgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
+  jca_counters[12]++; cblas_dgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
       ldb, beta, C, N);
 }
 
@@ -35,23 +36,23 @@ template <>
 void caffe_cpu_gemv<float>(const CBLAS_TRANSPOSE TransA, const int M,
     const int N, const float alpha, const float* A, const float* x,
     const float beta, float* y) {
-  cblas_sgemv(CblasRowMajor, TransA, M, N, alpha, A, N, x, 1, beta, y, 1);
+  jca_counters[13]++; cblas_sgemv(CblasRowMajor, TransA, M, N, alpha, A, N, x, 1, beta, y, 1);
 }
 
 template <>
 void caffe_cpu_gemv<double>(const CBLAS_TRANSPOSE TransA, const int M,
     const int N, const double alpha, const double* A, const double* x,
     const double beta, double* y) {
-  cblas_dgemv(CblasRowMajor, TransA, M, N, alpha, A, N, x, 1, beta, y, 1);
+  jca_counters[14]++; cblas_dgemv(CblasRowMajor, TransA, M, N, alpha, A, N, x, 1, beta, y, 1);
 }
 
 template <>
 void caffe_axpy<float>(const int N, const float alpha, const float* X,
-    float* Y) { cblas_saxpy(N, alpha, X, 1, Y, 1); }
+    float* Y) { jca_counters[16]++; cblas_saxpy(N, alpha, X, 1, Y, 1); }
 
 template <>
 void caffe_axpy<double>(const int N, const double alpha, const double* X,
-    double* Y) { cblas_daxpy(N, alpha, X, 1, Y, 1); }
+    double* Y) { jca_counters[17]++; cblas_daxpy(N, alpha, X, 1, Y, 1); }
 
 template <typename Dtype>
 void caffe_set(const int N, const Dtype alpha, Dtype* Y) {
@@ -106,24 +107,24 @@ template void caffe_copy<double>(const int N, const double* X, double* Y);
 
 template <>
 void caffe_scal<float>(const int N, const float alpha, float *X) {
-  cblas_sscal(N, alpha, X, 1);
+  jca_counters[18]++; cblas_sscal(N, alpha, X, 1);
 }
 
 template <>
 void caffe_scal<double>(const int N, const double alpha, double *X) {
-  cblas_dscal(N, alpha, X, 1);
+  jca_counters[19]++; cblas_dscal(N, alpha, X, 1);
 }
 
 template <>
 void caffe_cpu_axpby<float>(const int N, const float alpha, const float* X,
                             const float beta, float* Y) {
-  cblas_saxpby(N, alpha, X, 1, beta, Y, 1);
+  jca_counters[20]++; cblas_saxpby(N, alpha, X, 1, beta, Y, 1);
 }
 
 template <>
 void caffe_cpu_axpby<double>(const int N, const double alpha, const double* X,
                              const double beta, double* Y) {
-  cblas_daxpby(N, alpha, X, 1, beta, Y, 1);
+  jca_counters[21]++; cblas_daxpby(N, alpha, X, 1, beta, Y, 1);
 }
 
 template <>
@@ -318,13 +319,13 @@ void caffe_rng_bernoulli<float>(const int n, const float p, unsigned int* r);
 template <>
 float caffe_cpu_strided_dot<float>(const int n, const float* x, const int incx,
     const float* y, const int incy) {
-  return cblas_sdot(n, x, incx, y, incy);
+  jca_counters[22]++; return cblas_sdot(n, x, incx, y, incy);
 }
 
 template <>
 double caffe_cpu_strided_dot<double>(const int n, const double* x,
     const int incx, const double* y, const int incy) {
-  return cblas_ddot(n, x, incx, y, incy);
+  jca_counters[23]++; return cblas_ddot(n, x, incx, y, incy);
 }
 
 template <typename Dtype>
@@ -362,26 +363,36 @@ int caffe_cpu_hamming_distance<double>(const int n, const double* x,
 
 template <>
 float caffe_cpu_asum<float>(const int n, const float* x) {
-  return cblas_sasum(n, x, 1);
+  jca_counters[24]++; return cblas_sasum(n, x, 1);
 }
 
 template <>
 double caffe_cpu_asum<double>(const int n, const double* x) {
-  return cblas_dasum(n, x, 1);
+  jca_counters[25]++; return cblas_dasum(n, x, 1);
 }
 
 template <>
 void caffe_cpu_scale<float>(const int n, const float alpha, const float *x,
                             float* y) {
-  cblas_scopy(n, x, 1, y, 1);
-  cblas_sscal(n, alpha, y, 1);
+  jca_counters[26]++; cblas_scopy(n, x, 1, y, 1);
+  jca_counters[27]++; cblas_sscal(n, alpha, y, 1);
 }
 
 template <>
 void caffe_cpu_scale<double>(const int n, const double alpha, const double *x,
                              double* y) {
-  cblas_dcopy(n, x, 1, y, 1);
-  cblas_dscal(n, alpha, y, 1);
+  jca_counters[28]++; cblas_dcopy(n, x, 1, y, 1);
+  jca_counters[29]++; cblas_dscal(n, alpha, y, 1);
 }
 
 }  // namespace caffe
+
+void cblas_finish(void)
+{
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    for (int i = 0; i < sizeof(jca_counters) / sizeof(jca_counters[0]); i++) {
+        if (jca_counters[i]) {
+printf("jcacounter %d: %ld\n", i, jca_counters[i]);
+        }
+    }
+}

@@ -5,6 +5,7 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
 
+extern long jca_counters[];
 namespace caffe {
 
 template <typename Dtype>
@@ -45,7 +46,7 @@ void SoftmaxLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       }
     }
     // subtraction
-    caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels, inner_num_,
+    jca_counters[130]++; caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels, inner_num_,
         1, -1., sum_multiplier_.cpu_data(), scale_data, 1., top_data);
     // exponentiation
     caffe_exp<Dtype>(dim, top_data, top_data);
@@ -79,7 +80,7 @@ void SoftmaxLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
           top_data + i * dim + k, inner_num_);
     }
     // subtraction
-    caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels, inner_num_, 1,
+    jca_counters[131]++; caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels, inner_num_, 1,
         -1., sum_multiplier_.cpu_data(), scale_data, 1., bottom_diff + i * dim);
   }
   // elementwise multiplication

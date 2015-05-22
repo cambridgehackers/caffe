@@ -16,6 +16,7 @@ using caffe::shared_ptr;
 using caffe::Timer;
 using caffe::vector;
 
+void cblas_finish(void);
 
 DEFINE_int32(gpu, -1,
     "Run in GPU mode on given device ID.");
@@ -132,6 +133,7 @@ int train() {
     solver->Solve();
   }
   LOG(INFO) << "Optimization Done.";
+cblas_finish();
   return 0;
 }
 RegisterBrewFunction(train);
