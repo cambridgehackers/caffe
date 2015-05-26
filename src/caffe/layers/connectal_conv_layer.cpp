@@ -9,13 +9,24 @@
 //#define OLDVER
 namespace caffe {
 
+#define BOFFSET(n, c, h, w, NAME) ((((n) * NAME ## _channels + (c)) * NAME ## _height + (h)) * NAME ## _width + (w))
 template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   const Dtype* weight = this->blobs_[0]->cpu_data();
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->cpu_data();
     Dtype* top_data = top[i]->mutable_cpu_data();
+    int top_channels = top[i]->channels();
+    int top_height = top[i]->height();
+    int top_width = top[i]->width();
+    int bottom_channels = bottom[i]->channels();
+    int bottom_height = bottom[i]->height();
+    int bottom_width = bottom[i]->width();
+    int weight_channels = this->blobs_[0]->channels();
+    int weight_height = this->blobs_[0]->height();
+    int weight_width = this->blobs_[0]->width();
     for (int n = 0; n < this->num_; ++n) {
 #ifdef OLDVER
       const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
@@ -32,26 +43,26 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
             (Dtype)1., weight + this->weight_offset_ * g, col_buff + this->col_offset_ * g,
             (Dtype)0., top_data + top[i]->offset(n) + this->output_offset_ * g);
 #else
-        int o_g = top[i]->channels() / this->group_;
-        int k_g = bottom[i]->channels() / this->group_;
+        int o_g = top_channels / this->group_;
+        int k_g = bottom_channels / this->group_;
         int o_head = o_g * g;
         int k_head = k_g * g;
         for (int o = 0; o < o_g; o++) {
-          for (int y = 0; y < top[i]->height(); y++)
-            for (int x = 0; x < top[i]->width(); x++)
-              top_data[top[i]->offset(n, o + o_head, y, x)] = 0;
+          for (int y = 0; y < top_height; y++)
+            for (int x = 0; x < top_width; x++)
+              top_data[BOFFSET(n, o + o_head, y, x, top)] = 0;
           for (int k = 0; k < k_g; k++) {
-            for (int y = 0; y < top[i]->height(); y++) {
-              for (int x = 0; x < top[i]->width(); x++) {
+            for (int y = 0; y < top_height; y++) {
+              for (int x = 0; x < top_width; x++) {
                 for (int p = 0; p < this->kernel_h_; p++) {
                   for (int q = 0; q < this->kernel_w_; q++) {
                     int in_y = y * this->stride_h_ - this->pad_h_ + p;
                     int in_x = x * this->stride_w_ - this->pad_w_ + q;
-                    if (in_y >= 0 && in_y < bottom[i]->height()
-                      && in_x >= 0 && in_x < bottom[i]->width()) {
-                      top_data[top[i]->offset(n, o + o_head, y, x)] +=
-                        bottom_data[bottom[i]->offset(n, k + k_head, in_y, in_x)]
-                        * weight[this->blobs_[0]->offset(o + o_head, k, p, q)];
+                    if (in_y >= 0 && in_y < bottom_height
+                      && in_x >= 0 && in_x < bottom_width) {
+                      top_data[BOFFSET(n, o + o_head, y, x, top)] +=
+                        bottom_data[BOFFSET(n, k + k_head, in_y, in_x, bottom)]
+                        * weight[BOFFSET(o + o_head, k, p, q, weight)];
                     }
                   }
                 }
@@ -69,10 +80,10 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
           this->height_out_ * this->width_out_, 1, (Dtype)1., bias, this->bias_multiplier_.cpu_data(),
           (Dtype)1., top_data + top[i]->offset(n));
 #else
-        for (int o = 0; o < top[i]->channels(); o++) {
-          for (int y = 0; y < top[i]->height(); y++) {
-            for (int x = 0; x < top[i]->width(); x++) {
-              top_data[top[i]->offset(n, o, y, x)] += bias[o];
+        for (int o = 0; o < top_channels; o++) {
+          for (int y = 0; y < top_height; y++) {
+            for (int x = 0; x < top_width; x++) {
+              top_data[BOFFSET(n, o, y, x, top)] += bias[o];
             }
           }
         }
