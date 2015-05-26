@@ -16,10 +16,6 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->cpu_data();
     Dtype* top_data = top[i]->mutable_cpu_data();
-printf("[%s:%d] index %d in h %d w %d out h %d w %d kernel h %d w %d stride h %d w %d pad h %d w %d\n",
- __FUNCTION__, __LINE__, i, bottom[i]->height(), bottom[i]->width(), top[i]->height(), top[i]->width(),
- this->kernel_h_, this->kernel_w_, this->stride_h_, this->stride_w_, this->pad_h_, this->pad_w_);
-printf("[%s:%d] out num %d group %d bias %d top_data %p bottom_data %p weight %p\n", __FUNCTION__, __LINE__, top[i]->num(), this->group_, this->bias_term_, top_data, bottom_data, weight);
     for (int n = 0; n < this->num_; ++n) {
 #ifdef OLDVER
       const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
@@ -41,6 +37,9 @@ printf("[%s:%d] out num %d group %d bias %d top_data %p bottom_data %p weight %p
         int o_head = o_g * g;
         int k_head = k_g * g;
         for (int o = 0; o < o_g; o++) {
+          for (int y = 0; y < top[i]->height(); y++)
+            for (int x = 0; x < top[i]->width(); x++)
+              top_data[top[i]->offset(n, o + o_head, y, x)] = 0;
           for (int k = 0; k < k_g; k++) {
             for (int y = 0; y < top[i]->height(); y++) {
               for (int x = 0; x < top[i]->width(); x++) {
@@ -74,7 +73,6 @@ printf("[%s:%d] out num %d group %d bias %d top_data %p bottom_data %p weight %p
           for (int y = 0; y < top[i]->height(); y++) {
             for (int x = 0; x < top[i]->width(); x++) {
               top_data[top[i]->offset(n, o, y, x)] += bias[o];
-// * this->bias_multiplier_.cpu_data()[0];
             }
           }
         }

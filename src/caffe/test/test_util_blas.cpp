@@ -10,6 +10,7 @@
 
 #include "caffe/test/test_caffe_main.hpp"
 
+extern long jca_counters[];
 namespace caffe {
 
 extern cudaDeviceProp CAFFE_TEST_CUDA_PROP;
@@ -32,7 +33,7 @@ TYPED_TEST(GemmTest, TestGemmCPUGPU) {
 
   if (sizeof(TypeParam) == 4 || CAFFE_TEST_CUDA_PROP.major >= 2) {
     // [1, 2, 3; 4 5 6] * [1, 2, 3, 4; 5, 6, 7, 8; 9, 10, 11, 12];
-    caffe_cpu_gemm<TypeParam>(CblasNoTrans, CblasNoTrans, 2, 4, 3, 1.,
+    jca_counters[140]++; caffe_cpu_gemm<TypeParam>(CblasNoTrans, CblasNoTrans, 2, 4, 3, 1.,
         A.cpu_data(), B.cpu_data(), 0., C.mutable_cpu_data());
     for (int i = 0; i < 8; ++i) {
       EXPECT_EQ(C.cpu_data()[i], result[i]);
@@ -46,7 +47,7 @@ TYPED_TEST(GemmTest, TestGemmCPUGPU) {
     // Test when we have a transposed A
     A.Reshape(1, 1, 3, 2);
     caffe_copy(6, A_reshape_data, A.mutable_cpu_data());
-    caffe_cpu_gemm<TypeParam>(CblasTrans, CblasNoTrans, 2, 4, 3, 1.,
+    jca_counters[141]++; caffe_cpu_gemm<TypeParam>(CblasTrans, CblasNoTrans, 2, 4, 3, 1.,
         A.cpu_data(), B.cpu_data(), 0., C.mutable_cpu_data());
     for (int i = 0; i < 8; ++i) {
       EXPECT_EQ(C.cpu_data()[i], result[i]);
@@ -60,7 +61,7 @@ TYPED_TEST(GemmTest, TestGemmCPUGPU) {
     // Test when we have a transposed A and a transposed B too
     B.Reshape(1, 1, 4, 3);
     caffe_copy(12, B_reshape_data, B.mutable_cpu_data());
-    caffe_cpu_gemm<TypeParam>(CblasTrans, CblasTrans, 2, 4, 3, 1.,
+    jca_counters[142]++; caffe_cpu_gemm<TypeParam>(CblasTrans, CblasTrans, 2, 4, 3, 1.,
         A.cpu_data(), B.cpu_data(), 0., C.mutable_cpu_data());
     for (int i = 0; i < 8; ++i) {
       EXPECT_EQ(C.cpu_data()[i], result[i]);
@@ -74,7 +75,7 @@ TYPED_TEST(GemmTest, TestGemmCPUGPU) {
     // Test when we have a transposed B
     A.Reshape(1, 1, 2, 3);
     caffe_copy(6, data, A.mutable_cpu_data());
-    caffe_cpu_gemm<TypeParam>(CblasNoTrans, CblasTrans, 2, 4, 3, 1.,
+    jca_counters[143]++; caffe_cpu_gemm<TypeParam>(CblasNoTrans, CblasTrans, 2, 4, 3, 1.,
         A.cpu_data(), B.cpu_data(), 0., C.mutable_cpu_data());
     for (int i = 0; i < 8; ++i) {
       EXPECT_EQ(C.cpu_data()[i], result[i]);
