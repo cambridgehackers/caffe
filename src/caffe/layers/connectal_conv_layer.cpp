@@ -25,6 +25,8 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
     int weight_channels = this->blobs_[0]->channels();
     int weight_height = this->blobs_[0]->height();
     int weight_width = this->blobs_[0]->width();
+    int kernel_pad_h = this->kernel_h_ - this->pad_h_;
+    int kernel_pad_w = this->kernel_w_ - this->pad_w_;
     for (int n = 0; n < this->num_; ++n) {
 #ifdef OLDVER
       const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
@@ -51,18 +53,21 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
               top_data[BOFFSET(top, n, o_head, y, x)] = 0;
           for (int k = 0; k < k_g; k++) {
             int k_head = k + k_g * g;
+            const Dtype *bp = &bottom_data[BOFFSET(bottom, n, k_head, 0, 0)];
+            const Dtype *wp = &weight[BOFFSET(weight, o_head, k, 0, 0)];
             for (int y = 0; y < top_height; y++) {
+              int stride_y = y * this->stride_h_;
               for (int x = 0; x < top_width; x++) {
+                int stride_x = x * this->stride_w_;
                 Dtype *tp = &top_data[BOFFSET(top, n, o_head, y, x)];
-                const Dtype *bp = &bottom_data[BOFFSET(bottom, n, k_head, 0, 0)];
-                const Dtype *wp = &weight[BOFFSET(weight, o_head, k, 0, 0)];
-                for (int p = 0 - this->pad_h_; p < this->kernel_h_ - this->pad_h_; p++) {
-                  for (int q = 0 - this->pad_w_; q < this->kernel_w_ - this->pad_w_; q++) {
-                    int in_y = y * this->stride_h_ + p;
-                    int in_x = x * this->stride_w_ + q;
-                    if (p >= 0 && in_y < bottom_height && q >= 0 && in_x < bottom_width)
-                      *tp += bp[BOFFSET(bottom, 0, 0, in_y, in_x)] * wp[BOFFSET(weight, 0, 0, p, q)];
-                  }
+                for (int p = 0; p < kernel_pad_h; p++) {
+                  int in_y = stride_y + p;
+                  if (in_y < bottom_height)
+                    for (int q = 0; q < kernel_pad_w; q++) {
+                      int in_x = stride_x + q;
+                      if (in_x < bottom_width)
+                        *tp += bp[BOFFSET(bottom, 0, 0, in_y, in_x)] * wp[BOFFSET(weight, 0, 0, p, q)];
+                    }
                 }
               }
             }
