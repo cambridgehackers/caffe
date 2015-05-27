@@ -9,7 +9,6 @@
 //#define OLDVER
 namespace caffe {
 
-#define BOFFSET(n, c, h, w, NAME) ((((n) * NAME ## _channels + (c)) * NAME ## _height + (h)) * NAME ## _width + (w))
 template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
@@ -42,27 +41,27 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
             (Dtype)1., weight + this->weight_offset_ * g, col_buff + this->col_offset_ * g,
             (Dtype)0., top_data + top[i]->offset(n) + this->output_offset_ * g);
 #else
+#define BOFFSET(NAME, N, C, H, W) ((((N) * NAME ## _channels + (C)) * NAME ## _height + (H)) * NAME ## _width + (W))
         int o_g = top_channels / this->group_;
         int k_g = bottom_channels / this->group_;
-        int o_head = o_g * g;
-        int k_head = k_g * g;
         for (int o = 0; o < o_g; o++) {
+          int o_head = o + o_g * g;
           for (int y = 0; y < top_height; y++)
             for (int x = 0; x < top_width; x++)
-              top_data[BOFFSET(n, o + o_head, y, x, top)] = 0;
+              top_data[BOFFSET(top, n, o_head, y, x)] = 0;
           for (int k = 0; k < k_g; k++) {
+            int k_head = k + k_g * g;
             for (int y = 0; y < top_height; y++) {
               for (int x = 0; x < top_width; x++) {
-                for (int p = 0; p < this->kernel_h_; p++) {
-                  for (int q = 0; q < this->kernel_w_; q++) {
-                    int in_y = y * this->stride_h_ - this->pad_h_ + p;
-                    int in_x = x * this->stride_w_ - this->pad_w_ + q;
-                    if (in_y >= 0 && in_y < bottom_height
-                      && in_x >= 0 && in_x < bottom_width) {
-                      top_data[BOFFSET(n, o + o_head, y, x, top)] +=
-                        bottom_data[BOFFSET(n, k + k_head, in_y, in_x, bottom)]
-                        * weight[BOFFSET(o + o_head, k, p, q, weight)];
-                    }
+                Dtype *tp = &top_data[BOFFSET(top, n, o_head, y, x)];
+                const Dtype *bp = &bottom_data[BOFFSET(bottom, n, k_head, 0, 0)];
+                const Dtype *wp = &weight[BOFFSET(weight, o_head, k, 0, 0)];
+                for (int p = 0 - this->pad_h_; p < this->kernel_h_ - this->pad_h_; p++) {
+                  for (int q = 0 - this->pad_w_; q < this->kernel_w_ - this->pad_w_; q++) {
+                    int in_y = y * this->stride_h_ + p;
+                    int in_x = x * this->stride_w_ + q;
+                    if (p >= 0 && in_y < bottom_height && q >= 0 && in_x < bottom_width)
+                      *tp += bp[BOFFSET(bottom, 0, 0, in_y, in_x)] * wp[BOFFSET(weight, 0, 0, p, q)];
                   }
                 }
               }
@@ -82,7 +81,7 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
         for (int o = 0; o < top_channels; o++) {
           for (int y = 0; y < top_height; y++) {
             for (int x = 0; x < top_width; x++) {
-              top_data[BOFFSET(n, o, y, x, top)] += bias[o];
+              top_data[BOFFSET(top, n, o, y, x)] += bias[o];
             }
           }
         }
