@@ -13,6 +13,9 @@ template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   const Dtype* weight = this->blobs_[0]->cpu_data();
+  const Dtype* bias = NULL;
+  if (this->bias_term_)
+    bias = this->blobs_[1]->cpu_data();
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->cpu_data();
     Dtype* top_data = top[i]->mutable_cpu_data();
@@ -27,7 +30,6 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
     int weight_width = this->blobs_[0]->width();
     int kernel_pad_h = this->kernel_h_ - this->pad_h_;
     int kernel_pad_w = this->kernel_w_ - this->pad_w_;
-#define BOFFSET(NAME, N, C, H, W) ((((N) * NAME ## _channels + (C)) * NAME ## _height + (H)) * NAME ## _width + (W))
     for (int n = 0; n < this->num_; ++n) {
 #ifdef OLDVER
       const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
@@ -44,16 +46,18 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
             (Dtype)1., weight + this->weight_offset_ * g, col_buff + this->col_offset_ * g,
             (Dtype)0., top_data + top[i]->offset(n) + this->output_offset_ * g);
 #else
+#define BOFFSET(NAME, N, C, H, W) ((((N) * NAME ## _channels + (C)) * NAME ## _height + (H)) * NAME ## _width + (W))
         int o_g = top_channels / this->group_;
         int k_g = bottom_channels / this->group_;
         int kgg = k_g * g;
         for (int o = 0; o < o_g; o++) {
           int o_head = o + o_g * g;
+          Dtype bias_val = bias ? bias[o_head] : 0;
           for (int y = 0; y < top_height; y++) {
             int stride_y = y * this->stride_h_;
             for (int x = 0; x < top_width; x++) {
               int stride_x = x * this->stride_w_;
-              Dtype temp = 0;
+              Dtype temp = bias_val;
               for (int p = 0; p < kernel_pad_h; p++) {
                 int in_y = stride_y + p;
                 if (in_y < bottom_height)
@@ -73,22 +77,13 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
 #endif
       }
       // Bias
-      if (this->bias_term_) {
-        const Dtype* bias = this->blobs_[1]->cpu_data();
 #ifdef OLDVER
+      if (this->bias_term_) {
         caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, this->num_output_,
           this->height_out_ * this->width_out_, 1, (Dtype)1., bias, this->bias_multiplier_.cpu_data(),
           (Dtype)1., top_data + top[i]->offset(n));
-#else
-        for (int o = 0; o < top_channels; o++) {
-          for (int y = 0; y < top_height; y++) {
-            for (int x = 0; x < top_width; x++) {
-              top_data[BOFFSET(top, n, o, y, x)] += bias[o];
-            }
-          }
-        }
-#endif
       }
+#endif
     }
   }
 }
