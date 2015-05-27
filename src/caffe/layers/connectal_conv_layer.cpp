@@ -54,25 +54,32 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
         for (int o = 0; o < o_g; o++) {
           int o_head = o + o_g * g;
           Dtype bias_val = bias ? bias[o_head] : 0;
+          const Dtype *wpy = &weight[BOFFSET(weight, o_head, 0, 0, 0)];
           for (int y = 0; y < top_height; y++) {
             int stride_y = y * this->stride_h_;
             int p_limit = MIN(kernel_pad_h, bottom_height - stride_y);
+            const Dtype *bpy = &bottom_data[BOFFSET(bottom, n, kgg, stride_y, 0)];
             for (int x = 0; x < top_width; x++) {
               int stride_x = x * this->stride_w_;
               int q_limit = MIN(kernel_pad_w, bottom_width - stride_x);
               Dtype temp = bias_val;
+              const Dtype *bpx = bpy;
+              const Dtype *wpx = wpy;
               for (int k = 0; k < k_g; k++) {
-                const Dtype *bp_base = &bottom_data[BOFFSET(bottom, n, k+kgg, stride_y, stride_x)];
-                const Dtype *wp_base = &weight[BOFFSET(weight, o_head, k, 0, 0)];
+                const Dtype *bpk = bpx;
+                const Dtype *wpk = wpx;
                 for (int p = 0; p < p_limit; p++) {
-                  const Dtype *bp = bp_base;
-                  const Dtype *wp = wp_base;
+                  const Dtype *bp = bpk;
+                  const Dtype *wp = wpk;
                   for (int q = 0; q < q_limit; q++)
                     temp += *bp++ * *wp++;
-                  bp_base += BOFFSET(bottom, 0, 0, 1, 0);
-                  wp_base += BOFFSET(weight, 0, 0, 1, 0);
+                  bpk += BOFFSET(bottom, 0, 0, 1, 0);
+                  wpk += BOFFSET(weight, 0, 0, 1, 0);
                 }
+                bpx += BOFFSET(bottom, 0, 1, 0, 0);
+                wpx += BOFFSET(weight, 0, 1, 0, 0);
               }
+              bpy += BOFFSET(bottom, 0, 0, 0, this->stride_w_);
               top_data[BOFFSET(top, n, o_head, y, x)] = temp;
             }
           }
