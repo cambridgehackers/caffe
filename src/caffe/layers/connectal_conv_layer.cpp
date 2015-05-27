@@ -27,6 +27,7 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
     int weight_width = this->blobs_[0]->width();
     int kernel_pad_h = this->kernel_h_ - this->pad_h_;
     int kernel_pad_w = this->kernel_w_ - this->pad_w_;
+#define BOFFSET(NAME, N, C, H, W) ((((N) * NAME ## _channels + (C)) * NAME ## _height + (H)) * NAME ## _width + (W))
     for (int n = 0; n < this->num_; ++n) {
 #ifdef OLDVER
       const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
@@ -43,33 +44,29 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
             (Dtype)1., weight + this->weight_offset_ * g, col_buff + this->col_offset_ * g,
             (Dtype)0., top_data + top[i]->offset(n) + this->output_offset_ * g);
 #else
-#define BOFFSET(NAME, N, C, H, W) ((((N) * NAME ## _channels + (C)) * NAME ## _height + (H)) * NAME ## _width + (W))
         int o_g = top_channels / this->group_;
         int k_g = bottom_channels / this->group_;
+        int kgg = k_g * g;
         for (int o = 0; o < o_g; o++) {
           int o_head = o + o_g * g;
-          for (int y = 0; y < top_height; y++)
-            for (int x = 0; x < top_width; x++)
-              top_data[BOFFSET(top, n, o_head, y, x)] = 0;
-          for (int k = 0; k < k_g; k++) {
-            int k_head = k + k_g * g;
-            const Dtype *bp = &bottom_data[BOFFSET(bottom, n, k_head, 0, 0)];
-            const Dtype *wp = &weight[BOFFSET(weight, o_head, k, 0, 0)];
-            for (int y = 0; y < top_height; y++) {
-              int stride_y = y * this->stride_h_;
-              for (int x = 0; x < top_width; x++) {
-                int stride_x = x * this->stride_w_;
-                Dtype *tp = &top_data[BOFFSET(top, n, o_head, y, x)];
-                for (int p = 0; p < kernel_pad_h; p++) {
-                  int in_y = stride_y + p;
-                  if (in_y < bottom_height)
-                    for (int q = 0; q < kernel_pad_w; q++) {
-                      int in_x = stride_x + q;
-                      if (in_x < bottom_width)
-                        *tp += bp[BOFFSET(bottom, 0, 0, in_y, in_x)] * wp[BOFFSET(weight, 0, 0, p, q)];
-                    }
-                }
+          for (int y = 0; y < top_height; y++) {
+            int stride_y = y * this->stride_h_;
+            for (int x = 0; x < top_width; x++) {
+              int stride_x = x * this->stride_w_;
+              Dtype temp = 0;
+              for (int p = 0; p < kernel_pad_h; p++) {
+                int in_y = stride_y + p;
+                if (in_y < bottom_height)
+                  for (int q = 0; q < kernel_pad_w; q++) {
+                    int in_x = stride_x + q;
+                    const Dtype *bp = &bottom_data[BOFFSET(bottom, n, kgg, in_y, in_x)];
+                    const Dtype *wp = &weight[BOFFSET(weight, o_head, 0, p, q)];
+                    if (in_x < bottom_width)
+                      for (int k = 0; k < k_g; k++)
+                        temp += bp[BOFFSET(bottom, 0, k, 0, 0)] * wp[BOFFSET(weight, 0, k, 0, 0)];
+                  }
               }
+              top_data[BOFFSET(top, n, o_head, y, x)] = temp;
             }
           }
         }
