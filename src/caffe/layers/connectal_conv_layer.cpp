@@ -47,6 +47,7 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
             (Dtype)0., top_data + top[i]->offset(n) + this->output_offset_ * g);
 #else
 #define BOFFSET(NAME, N, C, H, W) ((((N) * NAME ## _channels + (C)) * NAME ## _height + (H)) * NAME ## _width + (W))
+#define MIN(A,B) (((A) < (B)) ? (A) : (B))
         int o_g = top_channels / this->group_;
         int k_g = bottom_channels / this->group_;
         int kgg = k_g * g;
@@ -55,20 +56,19 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
           Dtype bias_val = bias ? bias[o_head] : 0;
           for (int y = 0; y < top_height; y++) {
             int stride_y = y * this->stride_h_;
+            int p_limit = MIN(kernel_pad_h, bottom_height - stride_y);
             for (int x = 0; x < top_width; x++) {
               int stride_x = x * this->stride_w_;
+              int q_limit = MIN(kernel_pad_w, bottom_width - stride_x);
               Dtype temp = bias_val;
-              for (int p = 0; p < kernel_pad_h; p++) {
+              for (int p = 0; p < p_limit; p++) {
                 int in_y = stride_y + p;
-                if (in_y < bottom_height)
-                  for (int q = 0; q < kernel_pad_w; q++) {
-                    int in_x = stride_x + q;
-                    const Dtype *bp = &bottom_data[BOFFSET(bottom, n, kgg, in_y, in_x)];
-                    const Dtype *wp = &weight[BOFFSET(weight, o_head, 0, p, q)];
-                    if (in_x < bottom_width)
-                      for (int k = 0; k < k_g; k++)
-                        temp += bp[BOFFSET(bottom, 0, k, 0, 0)] * wp[BOFFSET(weight, 0, k, 0, 0)];
-                  }
+                for (int q = 0; q < q_limit; q++) {
+                  const Dtype *bp = &bottom_data[BOFFSET(bottom, n, kgg, in_y, stride_x + q)];
+                  const Dtype *wp = &weight[BOFFSET(weight, o_head, 0, p, q)];
+                  for (int k = 0; k < k_g; k++)
+                    temp += bp[BOFFSET(bottom, 0, k, 0, 0)] * wp[BOFFSET(weight, 0, k, 0, 0)];
+                }
               }
               top_data[BOFFSET(top, n, o_head, y, x)] = temp;
             }
