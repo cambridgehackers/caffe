@@ -51,6 +51,7 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
         int o_g = top_channels / this->group_;
         int k_g = bottom_channels / this->group_;
         int kgg = k_g * g;
+        Dtype *tp = &top_data[BOFFSET(top, n, o_g * g, 0, 0)];
         for (int o = 0; o < o_g; o++) {
           int o_head = o + o_g * g;
           Dtype bias_val = bias ? bias[o_head] : 0;
@@ -80,7 +81,7 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
                 wpx += BOFFSET(weight, 0, 1, 0, 0);
               }
               bpy += BOFFSET(bottom, 0, 0, 0, this->stride_w_);
-              top_data[BOFFSET(top, n, o_head, y, x)] = temp;
+              *tp++ = temp;
             }
           }
         }
