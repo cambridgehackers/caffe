@@ -61,13 +61,16 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
               int stride_x = x * this->stride_w_;
               int q_limit = MIN(kernel_pad_w, bottom_width - stride_x);
               Dtype temp = bias_val;
-              for (int p = 0; p < p_limit; p++) {
-                int in_y = stride_y + p;
-                for (int q = 0; q < q_limit; q++) {
-                  const Dtype *bp = &bottom_data[BOFFSET(bottom, n, kgg, in_y, stride_x + q)];
-                  const Dtype *wp = &weight[BOFFSET(weight, o_head, 0, p, q)];
-                  for (int k = 0; k < k_g; k++)
-                    temp += bp[BOFFSET(bottom, 0, k, 0, 0)] * wp[BOFFSET(weight, 0, k, 0, 0)];
+              for (int k = 0; k < k_g; k++) {
+                const Dtype *bp_base = &bottom_data[BOFFSET(bottom, n, k+kgg, stride_y, stride_x)];
+                const Dtype *wp_base = &weight[BOFFSET(weight, o_head, k, 0, 0)];
+                for (int p = 0; p < p_limit; p++) {
+                  const Dtype *bp = bp_base;
+                  const Dtype *wp = wp_base;
+                  for (int q = 0; q < q_limit; q++)
+                    temp += *bp++ * *wp++;
+                  bp_base += BOFFSET(bottom, 0, 0, 1, 0);
+                  wp_base += BOFFSET(weight, 0, 0, 1, 0);
                 }
               }
               top_data[BOFFSET(top, n, o_head, y, x)] = temp;
