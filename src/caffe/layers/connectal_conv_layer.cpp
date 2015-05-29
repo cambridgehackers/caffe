@@ -16,56 +16,55 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
   const Dtype* bias = NULL;
   if (this->bias_term_)
     bias = this->blobs_[1]->cpu_data();
+  int bottom_hw = this->height_ * this->width_;
+  int kernel_hw = this->kernel_h_ * this->kernel_w_;
+  int per_out_group = this->conv_out_channels_ / this->group_;
+  int per_in_group = this->conv_in_channels_ / this->group_;
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->cpu_data();
     Dtype* top_data = top[i]->mutable_cpu_data();
-    int top_channels = top[i]->channels();
-    int top_height = top[i]->height();
-    int top_width = top[i]->width();
-    int bottom_channels = bottom[i]->channels();
-    int bottom_height = bottom[i]->height();
-    int bottom_width = bottom[i]->width();
-    int weight_channels = this->blobs_[0]->channels();
-    int weight_height = this->blobs_[0]->height();
-    int weight_width = this->blobs_[0]->width();
-    int kernel_pad_h = this->kernel_h_ - this->pad_h_;
-    int kernel_pad_w = this->kernel_w_ - this->pad_w_;
-    for (int n = 0; n < this->num_; ++n) {
+      // Convolution
 #ifdef OLDVER
+    for (int n = 0; n < this->num_; ++n) {
       const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
       if (!this->is_1x1_) {
         this->conv_im2col_cpu(col_buff, this->col_buffer_.mutable_cpu_data());
         col_buff = this->col_buffer_.cpu_data();
       }
-#endif
-      // Convolution
       for (int g = 0; g < this->group_; ++g) {
-#ifdef OLDVER
         caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, this->conv_out_channels_ /
             this->group_, this->conv_out_spatial_dim_, this->kernel_dim_ / this->group_,
             (Dtype)1., weight + this->weight_offset_ * g, col_buff + this->col_offset_ * g,
             (Dtype)0., top_data + top[i]->offset(n) + this->output_offset_ * g);
+      }
+      // Bias
+      if (this->bias_term_) {
+        caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, this->num_output_,
+          this->height_out_ * this->width_out_, 1, (Dtype)1., bias, this->bias_multiplier_.cpu_data(),
+          (Dtype)1., top_data + top[i]->offset(n));
+      }
+    }
 #else
-#define BOFFSET(NAME, N, C, H, W) ((((N) * NAME ## _channels + (C)) * NAME ## _height + (H)) * NAME ## _width + (W))
+    int nblock = 0;
+    for (int nunused = 0; nunused < this->num_; ++nunused) {
+      const Dtype *biasptr = bias;
+      for (int g = 0; g < this->group_; ++g) {
 #define MIN(A,B) (((A) < (B)) ? (A) : (B))
-        int o_g = top_channels / this->group_;
-        int ogg = o_g * g;
-        int k_g = bottom_channels / this->group_;
-        Dtype *tp = &top_data[BOFFSET(top, n, ogg, 0, 0)];
-        const Dtype *bp_base = &bottom_data[BOFFSET(bottom, n, k_g * g, 0, 0)];
-        for (int o_head = ogg; o_head < o_g + ogg; o_head++) {
-          Dtype bias_val = bias ? bias[o_head] : 0;
-          const Dtype *wpy = &weight[BOFFSET(weight, o_head, 0, 0, 0)];
-          for (int y = 0; y < top_height; y++) {
-            int stride_y = y * this->stride_h_;
-            int p_limit = MIN(kernel_pad_h, bottom_height - stride_y);
-            const Dtype *bpy = &bp_base[BOFFSET(bottom, 0, 0, stride_y, 0)];
-            for (int x = 0; x < top_width; x++) {
-              int q_limit = MIN(kernel_pad_w, bottom_width - x * this->stride_w_);
+        Dtype *tp = &top_data[nblock * this->output_offset_];
+        const Dtype *bp_base = &bottom_data[nblock * per_in_group * bottom_hw];
+        const Dtype *wpy = &weight[g * this->weight_offset_];
+        for (int ounused = 0; ounused < per_out_group; ounused++) {
+          Dtype bias_val = bias ? *biasptr++ : 0;
+          const Dtype *bpg = bp_base;
+          for (int y = 0; y < this->height_out_; y++) {
+            int p_limit = MIN(this->kernel_h_ - this->pad_h_, this->height_ - y * this->stride_h_);
+            const Dtype *bpy = bpg;
+            for (int x = 0; x < this->width_out_; x++) {
+              int q_limit = MIN(this->kernel_w_ - this->pad_w_, this->width_ - x * this->stride_w_);
               Dtype temp = bias_val;
               const Dtype *bpx = bpy;
               const Dtype *wpx = wpy;
-              for (int k = 0; k < k_g; k++) {
+              for (int k = 0; k < per_in_group; k++) {
                 const Dtype *bpk = bpx;
                 const Dtype *wpk = wpx;
                 for (int p = 0; p < p_limit; p++) {
@@ -73,28 +72,23 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
                   const Dtype *wp = wpk;
                   for (int q = 0; q < q_limit; q++)
                     temp += *bp++ * *wp++;
-                  bpk += BOFFSET(bottom, 0, 0, 1, 0);
-                  wpk += BOFFSET(weight, 0, 0, 1, 0);
+                  bpk += this->width_;
+                  wpk += this->kernel_w_;
                 }
-                bpx += BOFFSET(bottom, 0, 1, 0, 0);
-                wpx += BOFFSET(weight, 0, 1, 0, 0);
+                bpx += bottom_hw;
+                wpx += kernel_hw;
               }
-              bpy += BOFFSET(bottom, 0, 0, 0, this->stride_w_);
+              bpy += this->stride_w_;
               *tp++ = temp;
             }
+            bpg += this->width_ * this->stride_h_;
           }
+          wpy += per_in_group * kernel_hw;
         }
-#endif
+        nblock++;
       }
-      // Bias
-#ifdef OLDVER
-      if (this->bias_term_) {
-        caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, this->num_output_,
-          this->height_out_ * this->width_out_, 1, (Dtype)1., bias, this->bias_multiplier_.cpu_data(),
-          (Dtype)1., top_data + top[i]->offset(n));
-      }
-#endif
     }
+#endif
   }
 }
 
@@ -115,7 +109,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
     if (this->bias_term_ && this->param_propagate_down_[1]) {
       Dtype* bias_diff = this->blobs_[1]->mutable_cpu_diff();
       for (int n = 0; n < this->num_; ++n) {
-#if OLDVER
+#ifdef OLDVER
         caffe_cpu_gemv<Dtype>(CblasNoTrans, this->num_output_, this->height_out_ * this->width_out_, 1.,
             top_diff + top[i]->offset(n), this->bias_multiplier_.cpu_data(), 1., bias_diff);
 #else
@@ -128,7 +122,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       for (int n = 0; n < this->num_; ++n) {
         // gradient w.r.t. weight. Note that we will accumulate diffs.
         if (this->param_propagate_down_[0]) {
-#if OLDVER
+#ifdef OLDVER
           const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
           if (!this->is_1x1_) {
             this->conv_im2col_cpu(col_buff, this->col_buffer_.mutable_cpu_data());
@@ -156,7 +150,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         }
         // gradient w.r.t. bottom data, if necessary.
         if (propagate_down[i]) {
-#if OLDVER
+#ifdef OLDVER
           Dtype* col_buff = this->col_buffer_.mutable_cpu_data();
           if (this->is_1x1_)
             col_buff = bottom_diff + bottom[i]->offset(n);
