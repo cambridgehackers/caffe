@@ -101,7 +101,6 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
 template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
-#if 1
   const Dtype* weight = this->blobs_[0]->cpu_data();
   Dtype* weight_diff = this->blobs_[0]->mutable_cpu_diff();
   if (this->param_propagate_down_[0])
@@ -116,14 +115,20 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
     if (this->bias_term_ && this->param_propagate_down_[1]) {
       Dtype* bias_diff = this->blobs_[1]->mutable_cpu_diff();
       for (int n = 0; n < this->num_; ++n) {
+#if OLDVER
         caffe_cpu_gemv<Dtype>(CblasNoTrans, this->num_output_, this->height_out_ * this->width_out_, 1.,
             top_diff + top[i]->offset(n), this->bias_multiplier_.cpu_data(), 1., bias_diff);
+#else
+        caffe_cpu_gemv<Dtype>(CblasNoTrans, this->num_output_, this->height_out_ * this->width_out_, 1.,
+            top_diff + top[i]->offset(n), this->bias_multiplier_.cpu_data(), 1., bias_diff);
+#endif
       }
     }
     if (this->param_propagate_down_[0] || propagate_down[i]) {
       for (int n = 0; n < this->num_; ++n) {
         // gradient w.r.t. weight. Note that we will accumulate diffs.
         if (this->param_propagate_down_[0]) {
+#if OLDVER
           const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
           if (!this->is_1x1_) {
             this->conv_im2col_cpu(col_buff, this->col_buffer_.mutable_cpu_data());
@@ -135,9 +140,23 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                 (Dtype)1., top_diff + top[i]->offset(n) + this->output_offset_ * g, col_buff + this->col_offset_ * g,
                 (Dtype)1., weight_diff + this->weight_offset_ * g);
           }
+#else
+          const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
+          if (!this->is_1x1_) {
+            this->conv_im2col_cpu(col_buff, this->col_buffer_.mutable_cpu_data());
+            col_buff = this->col_buffer_.cpu_data();
+          }
+          for (int g = 0; g < this->group_; ++g) {
+            caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasTrans, this->conv_out_channels_ / this->group_,
+                this->kernel_dim_ / this->group_, this->conv_out_spatial_dim_,
+                (Dtype)1., top_diff + top[i]->offset(n) + this->output_offset_ * g, col_buff + this->col_offset_ * g,
+                (Dtype)1., weight_diff + this->weight_offset_ * g);
+          }
+#endif
         }
         // gradient w.r.t. bottom data, if necessary.
         if (propagate_down[i]) {
+#if OLDVER
           Dtype* col_buff = this->col_buffer_.mutable_cpu_data();
           if (this->is_1x1_)
             col_buff = bottom_diff + bottom[i]->offset(n);
@@ -149,12 +168,23 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
           }
           if (!this->is_1x1_)
             this->conv_col2im_cpu(col_buff, bottom_diff + bottom[i]->offset(n));
+#else
+          Dtype* col_buff = this->col_buffer_.mutable_cpu_data();
+          if (this->is_1x1_)
+            col_buff = bottom_diff + bottom[i]->offset(n);
+          for (int g = 0; g < this->group_; ++g) {
+            caffe_cpu_gemm<Dtype>(CblasTrans, CblasNoTrans, this->kernel_dim_ / this->group_,
+                this->conv_out_spatial_dim_, this->conv_out_channels_ / this->group_,
+                (Dtype)1., weight + this->weight_offset_ * g, top_diff + top[i]->offset(n) + this->output_offset_ * g,
+                (Dtype)0., col_buff + this->col_offset_ * g);
+          }
+          if (!this->is_1x1_)
+            this->conv_col2im_cpu(col_buff, bottom_diff + bottom[i]->offset(n));
+#endif
         }
       }
     }
   }
-#else
-#endif
 }
 
 #ifdef CPU_ONLY
