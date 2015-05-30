@@ -13,18 +13,66 @@ template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   const Dtype* weight = this->blobs_[0]->cpu_data();
-  const Dtype* bias = NULL;
-  if (this->bias_term_)
-    bias = this->blobs_[1]->cpu_data();
+  const Dtype* bias = this->bias_term_ ? this->blobs_[1]->cpu_data() : NULL;
   int bottom_hw = this->height_ * this->width_;
   int kernel_hw = this->kernel_h_ * this->kernel_w_;
-  int per_out_group = this->conv_out_channels_ / this->group_;
-  int per_in_group = this->conv_in_channels_ / this->group_;
+  int out_group_size = this->conv_out_channels_ / this->group_;
+  int in_group_size = this->conv_in_channels_ / this->group_;
+  // For each input, ...
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->cpu_data();
     Dtype* top_data = top[i]->mutable_cpu_data();
       // Convolution
-#ifdef OLDVER
+#ifndef OLDVER
+    // For each image in input batch
+    for (int nunused = 0; nunused < this->num_; ++nunused) {
+      const Dtype *biasptr = bias;
+      // if group_ > 1, restrict connectivity to a subset of inputs
+      for (int g = 0; g < this->group_; ++g) {
+        Dtype *outputp = top_data;
+        const Dtype *wp_base = &weight[g * this->weight_offset_];
+        // for each 'out_group', calculate convolution over input data
+        for (int ounused = 0; ounused < out_group_size; ounused++) {
+          const Dtype *bpg = bottom_data;
+          const Dtype bias_val = bias ? *biasptr++ : 0;
+          // Scan over source 2D input data
+          for (int y = 0; y < this->height_out_; y++) {
+#define MIN(A,B) (((A) < (B)) ? (A) : (B))
+            int p_limit = MIN(this->kernel_h_ - this->pad_h_,
+                              this->height_ - y * this->stride_h_);
+            const Dtype *bpy = bpg;
+            for (int x = 0; x < this->width_out_; x++) {
+              int q_limit = MIN(this->kernel_w_ - this->pad_w_,
+                                this->width_ - x * this->stride_w_);
+              Dtype temp = bias_val;
+              const Dtype *bpx = bpy, *wpx = wp_base;
+              // for each 'in_group', add contribution into convolution
+              for (int k = 0; k < in_group_size; k++) {
+                const Dtype *bpk = bpx, *wpk = wpx;
+                // Calculate single 2D filter convolution
+                for (int p = 0; p < p_limit; p++) {
+                  const Dtype *bp = bpk, *wp = wpk;
+                  for (int q = 0; q < q_limit; q++)
+                    temp += *bp++ * *wp++;
+                  bpk += this->width_;
+                  wpk += this->kernel_w_;
+                }
+                bpx += bottom_hw;
+                wpx += kernel_hw;
+              }
+              // Write convolution result into output (image, channel, y, x)
+              *outputp++ = temp;
+              bpy += this->stride_w_;
+            }
+            bpg += this->width_ * this->stride_h_;
+          }
+          wp_base += in_group_size * kernel_hw;
+        }
+        bottom_data += in_group_size * bottom_hw;
+        top_data += this->output_offset_;
+      }
+    }
+#else
     for (int n = 0; n < this->num_; ++n) {
       const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
       if (!this->is_1x1_) {
@@ -42,50 +90,6 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
         caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, this->num_output_,
           this->height_out_ * this->width_out_, 1, (Dtype)1., bias, this->bias_multiplier_.cpu_data(),
           (Dtype)1., top_data + top[i]->offset(n));
-      }
-    }
-#else
-    int nblock = 0;
-    for (int nunused = 0; nunused < this->num_; ++nunused) {
-      const Dtype *biasptr = bias;
-      for (int g = 0; g < this->group_; ++g) {
-#define MIN(A,B) (((A) < (B)) ? (A) : (B))
-        Dtype *tp = &top_data[nblock * this->output_offset_];
-        const Dtype *bp_base = &bottom_data[nblock * per_in_group * bottom_hw];
-        const Dtype *wpy = &weight[g * this->weight_offset_];
-        for (int ounused = 0; ounused < per_out_group; ounused++) {
-          Dtype bias_val = bias ? *biasptr++ : 0;
-          const Dtype *bpg = bp_base;
-          for (int y = 0; y < this->height_out_; y++) {
-            int p_limit = MIN(this->kernel_h_ - this->pad_h_, this->height_ - y * this->stride_h_);
-            const Dtype *bpy = bpg;
-            for (int x = 0; x < this->width_out_; x++) {
-              int q_limit = MIN(this->kernel_w_ - this->pad_w_, this->width_ - x * this->stride_w_);
-              Dtype temp = bias_val;
-              const Dtype *bpx = bpy;
-              const Dtype *wpx = wpy;
-              for (int k = 0; k < per_in_group; k++) {
-                const Dtype *bpk = bpx;
-                const Dtype *wpk = wpx;
-                for (int p = 0; p < p_limit; p++) {
-                  const Dtype *bp = bpk;
-                  const Dtype *wp = wpk;
-                  for (int q = 0; q < q_limit; q++)
-                    temp += *bp++ * *wp++;
-                  bpk += this->width_;
-                  wpk += this->kernel_w_;
-                }
-                bpx += bottom_hw;
-                wpx += kernel_hw;
-              }
-              bpy += this->stride_w_;
-              *tp++ = temp;
-            }
-            bpg += this->width_ * this->stride_h_;
-          }
-          wpy += per_in_group * kernel_hw;
-        }
-        nblock++;
       }
     }
 #endif
