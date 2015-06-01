@@ -6,121 +6,47 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
 
-#if 0
-int sgemmf_(char *trana, char *tranb, integer *m, integer *n,
-  integer *k, real *alpha, real *a, integer *lda, real *b, integer *
- ldb, real *beta, real *c__, integer *ldc, ftnlen trana_len, ftnlen
- tranb_len)
-{
-    integer a_dim1, a_offset, b_dim1, b_offset, c_dim1, c_offset, i__1, i__2, i__3;
-    static integer i__, j, l, info;
-    static logical nota, notb;
-    static real temp;
-    static integer ncola;
-    extern logical lsame_(char *, char *, ftnlen, ftnlen);
-    static integer nrowa, nrowb;
-    extern /* Subroutine */ int xerbla_(char *, integer *, ftnlen);
-    a_dim1 = *lda;
-    a_offset = 1 + a_dim1;
-    a -= a_offset;
-    b_dim1 = *ldb;
-    b_offset = 1 + b_dim1;
-    b -= b_offset;
-    c_dim1 = *ldc;
-    c_offset = 1 + c_dim1;
-    c__ -= c_offset;
-    nota = lsame_(trana, "N", 1, 1);
-    notb = lsame_(tranb, "N", 1, 1);
-    if (nota) {
-        nrowa = *m;
-        ncola = *k;
-    } else {
-        nrowa = *k;
-        ncola = *m;
-    }
-    if (notb) {
-        nrowb = *k;
-    } else {
-        nrowb = *n;
-    }
-    info = 0;
-    if (! nota && ! lsame_(trana, "C", 1, 1) && ! lsame_( trana, "T", 1, 1)) { info = 1;
-    } else if (! notb && ! lsame_(tranb, "C", 1, 1) && !  lsame_(tranb, "T", 1, 1)) { info = 2;
-    } else if (*m < 0) { info = 3;
-    } else if (*n < 0) { info = 4;
-    } else if (*k < 0) { info = 5;
-    } else if (*lda < max(1,nrowa)) { info = 8;
-    } else if (*ldb < max(1,nrowb)) { info = 10;
-    } else if (*ldc < max(1,*m)) { info = 13; }
-    if (info != 0) {
- xerbla_("SGEMM ", &info, 6);
- return 0;
-    }
-    if (*m == 0 || *n == 0 || (*alpha == 0 || *k == 0) && *beta == 1) { return 0; }
-    if (*alpha == 0) {
-     i__1 = *n;
-     for (j = 1; j <= i__1; ++j) {
-  i__2 = *m;
-  for (i__ = 1; i__ <= i__2; ++i__) { c__[i__ + j * c_dim1] = *beta * c__[i__ + j * c_dim1]; }
-     }
- return 0;
-    }
-    if (notb) {
- if (nota) {
-     i__1 = *n;
-     for (j = 1; j <= i__1; ++j) {
-      i__2 = *m;
-      for (i__ = 1; i__ <= i__2; ++i__) { c__[i__ + j * c_dim1] = *beta * c__[i__ + j * c_dim1]; }
-  i__2 = *k;
-  for (l = 1; l <= i__2; ++l) {
-      if (b[l + j * b_dim1] != 0) {
-   temp = *alpha * b[l + j * b_dim1];
-   i__3 = *m;
-   for (i__ = 1; i__ <= i__3; ++i__) { c__[i__ + j * c_dim1] += temp * a[i__ + l * a_dim1]; }
-      }
-  }
-     }
- } else {
-     i__1 = *n;
-     for (j = 1; j <= i__1; ++j) {
-  i__2 = *m;
-  for (i__ = 1; i__ <= i__2; ++i__) {
-      temp = 0;
-      i__3 = *k;
-      for (l = 1; l <= i__3; ++l) { temp += a[l + i__ * a_dim1] * b[l + j * b_dim1]; }
-   c__[i__ + j * c_dim1] = *alpha * temp + *beta * c__[ i__ + j * c_dim1];
-  }
-     }
- }
-    } else {
- if (nota) {
-     i__1 = *n;
-     for (j = 1; j <= i__1; ++j) {
-      i__2 = *m;
-      for (i__ = 1; i__ <= i__2; ++i__) { c__[i__ + j * c_dim1] = *beta * c__[i__ + j * c_dim1]; }
-  i__2 = *k;
-  for (l = 1; l <= i__2; ++l) {
-      if (b[j + l * b_dim1] != 0) {
-   temp = *alpha * b[j + l * b_dim1];
-   i__3 = *m;
-   for (i__ = 1; i__ <= i__3; ++i__) { c__[i__ + j * c_dim1] += temp * a[i__ + l * a_dim1]; }
-      }
-  }
-     }
- } else {
-     i__1 = *n;
-     for (j = 1; j <= i__1; ++j) {
-  i__2 = *m;
-  for (i__ = 1; i__ <= i__2; ++i__) {
-      temp = 0;
-      i__3 = *k;
-      for (l = 1; l <= i__3; ++l) { temp += a[l + i__ * a_dim1] * b[j + l * b_dim1]; }
-      c__[i__ + j * c_dim1] = *alpha * temp + *beta * c__[ i__ + j * c_dim1];
-  }
-     }
- }
-    }
-    return 0;
+#if 1
+#define local_caffe_cpu_gemm(trana, tranb, AM, AN, AK, alpha, Aa, Ab, beta, Ac) {\
+int M = (AM), N = (AN), K = (AK); \
+const Dtype *a = (Aa), *b = (Ab); \
+Dtype * c = (Ac); \
+    for (int col = 0; col < N; ++col) {\
+        for (int row = 0; row < M; ++row)\
+            c[row * N + col] *= (beta);\
+        if ((tranb) == CblasNoTrans) {\
+            if ((trana) == CblasNoTrans) {\
+                for (int l = 0; l < K; ++l) {\
+                    Dtype temp = (alpha) * b[l * N + col];\
+                    for (int row = 0; row < M; ++row)\
+                        c[row * N + col] += temp * a[row * K + l];\
+                }\
+            } else {\
+                for (int row = 0; row < M; ++row) {\
+                    Dtype temp = 0;\
+                    for (int l = 0; l < K; ++l)\
+                       temp += a[l * M + row] * b[l * N + col];\
+                    c[row * N + col] += (alpha) * temp;\
+                }\
+            }\
+        }\
+        else {\
+            if ((trana) == CblasNoTrans) {\
+                for (int l = 0; l < K; ++l) {\
+                    Dtype temp = (alpha) * b[col * K + l];\
+                    for (int row = 0; row < M; ++row)\
+                        c[row * N + col] += temp * a[row * K + l];\
+                }\
+            } else {\
+                for (int row = 0; row < M; ++row) {\
+                    Dtype temp = 0;\
+                    for (int l = 0; l < K; ++l)\
+                        temp += a[l * M + row] * b[col * K + l];\
+                    c[row * N + col] += (alpha) * temp;\
+                }\
+            }\
+        }\
+    }\
 }
 #endif
 //#define OLDVER
@@ -231,7 +157,8 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       Dtype* bias_diff = this->blobs_[1]->mutable_cpu_diff();
       for (int n = 0; n < this->num_; ++n) {
 #ifndef OLDVER
-//(CblasRowMajor, CblasNoTrans, this->num_output_, N, 1., top_diff + top[i]->offset(n), N, this->bias_multiplier_.cpu_data(), 1, 1., bias_diff, 1);
+//void cblas_sgemv(TransA, M, N, alpha, *A, lda, *X, incX, beta, *Y, incY);
+//(CblasNoTrans, this->num_output_, N, 1., top_diff + top[i]->offset(n), N, this->bias_multiplier_.cpu_data(), 1, 1., bias_diff, 1);
         caffe_cpu_gemv<Dtype>(CblasNoTrans, this->num_output_, this->height_out_ * this->width_out_, 1.,
             top_diff + top[i]->offset(n), this->bias_multiplier_.cpu_data(), 1., bias_diff);
 #else
@@ -251,7 +178,8 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
             col_buff = this->col_buffer_.cpu_data();
           }
           for (int g = 0; g < this->group_; ++g) {
-            caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasTrans, this->conv_out_channels_ / this->group_,
+            local_caffe_cpu_gemm//<Dtype>
+                (CblasNoTrans, CblasTrans, this->conv_out_channels_ / this->group_,
                 this->kernel_dim_ / this->group_, this->conv_out_spatial_dim_,
                 (Dtype)1., top_diff + top[i]->offset(n) + this->output_offset_ * g, col_buff + this->col_offset_ * g,
                 (Dtype)1., weight_diff + this->weight_offset_ * g);
@@ -277,7 +205,35 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
           if (this->is_1x1_)
             col_buff = bottom_diff + bottom[i]->offset(n);
           for (int g = 0; g < this->group_; ++g) {
-            caffe_cpu_gemm<Dtype>(CblasTrans, CblasNoTrans, this->kernel_dim_ / this->group_,
+#if 0
+int M = this->kernel_dim_ / this->group_, N = this->conv_out_spatial_dim_, K = this->conv_out_channels_ / this->group_;
+const Dtype *aptr = weight + this->weight_offset_ * g;
+const Dtype *bptr = top_diff + top[i]->offset(n) + this->output_offset_ * g;
+Dtype *cptr = col_buff + this->col_offset_ * g;
+printf("[%s:%d] M %d N %d K %d\n", __FUNCTION__, __LINE__, M, N, K);\
+printf("[%s:%d] a %p [M=%d, K=%d]\n", __FUNCTION__, __LINE__, aptr, M, K); \
+for (int j = 0; j < M; j++) {\
+   for (int i = 0; i < K; i++) \
+       printf(" a[%d,%d] = %f;", j, i, (double)aptr[j * K + i]);\
+   printf("\n");\
+}\
+printf("[%s:%d] b %p [K=%d, N=%d]\n", __FUNCTION__, __LINE__, bptr, K, N); \
+for (int j = 0; j < K; j++) {\
+   for (int i = 0; i < N; i++)\
+       printf(" b[%d,%d] = %f;", j, i, (double)bptr[j * N + i]);\
+   printf("\n");\
+}
+#define PP \
+{printf("[%s:%d] c %p [M=%d, N=%d]\n", __FUNCTION__, __LINE__, cptr, M, N); \
+for (int j = 0; j < M; j++) {\
+   for (int i = 0; i < N; i++)\
+       printf(" c[%d,%d] = %f;", j, i, (double)cptr[j * N + i]);\
+   printf("\n");\
+}}
+              PP;
+#endif
+            local_caffe_cpu_gemm//<Dtype>
+                (CblasTrans, CblasNoTrans, this->kernel_dim_ / this->group_,
                 this->conv_out_spatial_dim_, this->conv_out_channels_ / this->group_,
                 (Dtype)1., weight + this->weight_offset_ * g, top_diff + top[i]->offset(n) + this->output_offset_ * g,
                 (Dtype)0., col_buff + this->col_offset_ * g);
