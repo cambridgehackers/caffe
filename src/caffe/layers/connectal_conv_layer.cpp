@@ -6,6 +6,123 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
 
+#if 0
+int sgemmf_(char *trana, char *tranb, integer *m, integer *n,
+  integer *k, real *alpha, real *a, integer *lda, real *b, integer *
+ ldb, real *beta, real *c__, integer *ldc, ftnlen trana_len, ftnlen
+ tranb_len)
+{
+    integer a_dim1, a_offset, b_dim1, b_offset, c_dim1, c_offset, i__1, i__2, i__3;
+    static integer i__, j, l, info;
+    static logical nota, notb;
+    static real temp;
+    static integer ncola;
+    extern logical lsame_(char *, char *, ftnlen, ftnlen);
+    static integer nrowa, nrowb;
+    extern /* Subroutine */ int xerbla_(char *, integer *, ftnlen);
+    a_dim1 = *lda;
+    a_offset = 1 + a_dim1;
+    a -= a_offset;
+    b_dim1 = *ldb;
+    b_offset = 1 + b_dim1;
+    b -= b_offset;
+    c_dim1 = *ldc;
+    c_offset = 1 + c_dim1;
+    c__ -= c_offset;
+    nota = lsame_(trana, "N", 1, 1);
+    notb = lsame_(tranb, "N", 1, 1);
+    if (nota) {
+        nrowa = *m;
+        ncola = *k;
+    } else {
+        nrowa = *k;
+        ncola = *m;
+    }
+    if (notb) {
+        nrowb = *k;
+    } else {
+        nrowb = *n;
+    }
+    info = 0;
+    if (! nota && ! lsame_(trana, "C", 1, 1) && ! lsame_( trana, "T", 1, 1)) { info = 1;
+    } else if (! notb && ! lsame_(tranb, "C", 1, 1) && !  lsame_(tranb, "T", 1, 1)) { info = 2;
+    } else if (*m < 0) { info = 3;
+    } else if (*n < 0) { info = 4;
+    } else if (*k < 0) { info = 5;
+    } else if (*lda < max(1,nrowa)) { info = 8;
+    } else if (*ldb < max(1,nrowb)) { info = 10;
+    } else if (*ldc < max(1,*m)) { info = 13; }
+    if (info != 0) {
+ xerbla_("SGEMM ", &info, 6);
+ return 0;
+    }
+    if (*m == 0 || *n == 0 || (*alpha == 0 || *k == 0) && *beta == 1) { return 0; }
+    if (*alpha == 0) {
+     i__1 = *n;
+     for (j = 1; j <= i__1; ++j) {
+  i__2 = *m;
+  for (i__ = 1; i__ <= i__2; ++i__) { c__[i__ + j * c_dim1] = *beta * c__[i__ + j * c_dim1]; }
+     }
+ return 0;
+    }
+    if (notb) {
+ if (nota) {
+     i__1 = *n;
+     for (j = 1; j <= i__1; ++j) {
+      i__2 = *m;
+      for (i__ = 1; i__ <= i__2; ++i__) { c__[i__ + j * c_dim1] = *beta * c__[i__ + j * c_dim1]; }
+  i__2 = *k;
+  for (l = 1; l <= i__2; ++l) {
+      if (b[l + j * b_dim1] != 0) {
+   temp = *alpha * b[l + j * b_dim1];
+   i__3 = *m;
+   for (i__ = 1; i__ <= i__3; ++i__) { c__[i__ + j * c_dim1] += temp * a[i__ + l * a_dim1]; }
+      }
+  }
+     }
+ } else {
+     i__1 = *n;
+     for (j = 1; j <= i__1; ++j) {
+  i__2 = *m;
+  for (i__ = 1; i__ <= i__2; ++i__) {
+      temp = 0;
+      i__3 = *k;
+      for (l = 1; l <= i__3; ++l) { temp += a[l + i__ * a_dim1] * b[l + j * b_dim1]; }
+   c__[i__ + j * c_dim1] = *alpha * temp + *beta * c__[ i__ + j * c_dim1];
+  }
+     }
+ }
+    } else {
+ if (nota) {
+     i__1 = *n;
+     for (j = 1; j <= i__1; ++j) {
+      i__2 = *m;
+      for (i__ = 1; i__ <= i__2; ++i__) { c__[i__ + j * c_dim1] = *beta * c__[i__ + j * c_dim1]; }
+  i__2 = *k;
+  for (l = 1; l <= i__2; ++l) {
+      if (b[j + l * b_dim1] != 0) {
+   temp = *alpha * b[j + l * b_dim1];
+   i__3 = *m;
+   for (i__ = 1; i__ <= i__3; ++i__) { c__[i__ + j * c_dim1] += temp * a[i__ + l * a_dim1]; }
+      }
+  }
+     }
+ } else {
+     i__1 = *n;
+     for (j = 1; j <= i__1; ++j) {
+  i__2 = *m;
+  for (i__ = 1; i__ <= i__2; ++i__) {
+      temp = 0;
+      i__3 = *k;
+      for (l = 1; l <= i__3; ++l) { temp += a[l + i__ * a_dim1] * b[j + l * b_dim1]; }
+      c__[i__ + j * c_dim1] = *alpha * temp + *beta * c__[ i__ + j * c_dim1];
+  }
+     }
+ }
+    }
+    return 0;
+}
+#endif
 //#define OLDVER
 namespace caffe {
 
@@ -113,7 +230,8 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
     if (this->bias_term_ && this->param_propagate_down_[1]) {
       Dtype* bias_diff = this->blobs_[1]->mutable_cpu_diff();
       for (int n = 0; n < this->num_; ++n) {
-#ifdef OLDVER
+#ifndef OLDVER
+//(CblasRowMajor, CblasNoTrans, this->num_output_, N, 1., top_diff + top[i]->offset(n), N, this->bias_multiplier_.cpu_data(), 1, 1., bias_diff, 1);
         caffe_cpu_gemv<Dtype>(CblasNoTrans, this->num_output_, this->height_out_ * this->width_out_, 1.,
             top_diff + top[i]->offset(n), this->bias_multiplier_.cpu_data(), 1., bias_diff);
 #else
@@ -126,7 +244,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       for (int n = 0; n < this->num_; ++n) {
         // gradient w.r.t. weight. Note that we will accumulate diffs.
         if (this->param_propagate_down_[0]) {
-#ifdef OLDVER
+#ifndef OLDVER
           const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
           if (!this->is_1x1_) {
             this->conv_im2col_cpu(col_buff, this->col_buffer_.mutable_cpu_data());
@@ -154,7 +272,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         }
         // gradient w.r.t. bottom data, if necessary.
         if (propagate_down[i]) {
-#ifdef OLDVER
+#ifndef OLDVER
           Dtype* col_buff = this->col_buffer_.mutable_cpu_data();
           if (this->is_1x1_)
             col_buff = bottom_diff + bottom[i]->offset(n);
