@@ -6,49 +6,6 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
 
-#if 1
-#define local_caffe_cpu_gemm(trana, tranb, AM, AN, AK, alpha, Aa, Ab, beta, Ac) {\
-int M = (AM), N = (AN), K = (AK); \
-const Dtype *a = (Aa), *b = (Ab); \
-Dtype * c = (Ac); \
-    for (int col = 0; col < N; ++col) {\
-        for (int row = 0; row < M; ++row)\
-            c[row * N + col] *= (beta);\
-        if ((tranb) == CblasNoTrans) {\
-            if ((trana) == CblasNoTrans) {\
-                for (int l = 0; l < K; ++l) {\
-                    Dtype temp = (alpha) * b[l * N + col];\
-                    for (int row = 0; row < M; ++row)\
-                        c[row * N + col] += temp * a[row * K + l];\
-                }\
-            } else {\
-                for (int row = 0; row < M; ++row) {\
-                    Dtype temp = 0;\
-                    for (int l = 0; l < K; ++l)\
-                       temp += a[l * M + row] * b[l * N + col];\
-                    c[row * N + col] += (alpha) * temp;\
-                }\
-            }\
-        }\
-        else {\
-            if ((trana) == CblasNoTrans) {\
-                for (int l = 0; l < K; ++l) {\
-                    Dtype temp = (alpha) * b[col * K + l];\
-                    for (int row = 0; row < M; ++row)\
-                        c[row * N + col] += temp * a[row * K + l];\
-                }\
-            } else {\
-                for (int row = 0; row < M; ++row) {\
-                    Dtype temp = 0;\
-                    for (int l = 0; l < K; ++l)\
-                        temp += a[l * M + row] * b[col * K + l];\
-                    c[row * N + col] += (alpha) * temp;\
-                }\
-            }\
-        }\
-    }\
-}
-#endif
 //#define OLDVER
 namespace caffe {
 
@@ -144,6 +101,8 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
   const Dtype* weight = this->blobs_[0]->cpu_data();
   Dtype* weight_diff = this->blobs_[0]->mutable_cpu_diff();
+  int out_group_size = this->conv_out_channels_ / this->group_;
+  int kernel_dim_group = this->kernel_dim_ / this->group_;
   if (this->param_propagate_down_[0])
     caffe_set(this->blobs_[0]->count(), Dtype(0), weight_diff);
   if (this->bias_term_ && this->param_propagate_down_[1])
@@ -178,11 +137,15 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
             col_buff = this->col_buffer_.cpu_data();
           }
           for (int g = 0; g < this->group_; ++g) {
-            local_caffe_cpu_gemm//<Dtype>
-                (CblasNoTrans, CblasTrans, this->conv_out_channels_ / this->group_,
-                this->kernel_dim_ / this->group_, this->conv_out_spatial_dim_,
-                (Dtype)1., top_diff + top[i]->offset(n) + this->output_offset_ * g, col_buff + this->col_offset_ * g,
-                (Dtype)1., weight_diff + this->weight_offset_ * g);
+            const Dtype *a = top_diff + top[i]->offset(n) + this->output_offset_ * g,
+                        *b = col_buff + this->col_offset_ * g;
+            for (int col = 0; col < kernel_dim_group; ++col) {
+                for (int l = 0; l < this->conv_out_spatial_dim_; ++l) {
+                    Dtype temp = b[col * this->conv_out_spatial_dim_ + l];
+                    for (int row = 0; row < out_group_size; ++row)
+                        (weight_diff + this->weight_offset_ * g)[row * kernel_dim_group + col] += temp * a[row * this->conv_out_spatial_dim_ + l];
+                }
+            }
           }
 #else
           const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
@@ -205,38 +168,16 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
           if (this->is_1x1_)
             col_buff = bottom_diff + bottom[i]->offset(n);
           for (int g = 0; g < this->group_; ++g) {
-#if 0
-int M = this->kernel_dim_ / this->group_, N = this->conv_out_spatial_dim_, K = this->conv_out_channels_ / this->group_;
-const Dtype *aptr = weight + this->weight_offset_ * g;
-const Dtype *bptr = top_diff + top[i]->offset(n) + this->output_offset_ * g;
-Dtype *cptr = col_buff + this->col_offset_ * g;
-printf("[%s:%d] M %d N %d K %d\n", __FUNCTION__, __LINE__, M, N, K);\
-printf("[%s:%d] a %p [M=%d, K=%d]\n", __FUNCTION__, __LINE__, aptr, M, K); \
-for (int j = 0; j < M; j++) {\
-   for (int i = 0; i < K; i++) \
-       printf(" a[%d,%d] = %f;", j, i, (double)aptr[j * K + i]);\
-   printf("\n");\
-}\
-printf("[%s:%d] b %p [K=%d, N=%d]\n", __FUNCTION__, __LINE__, bptr, K, N); \
-for (int j = 0; j < K; j++) {\
-   for (int i = 0; i < N; i++)\
-       printf(" b[%d,%d] = %f;", j, i, (double)bptr[j * N + i]);\
-   printf("\n");\
-}
-#define PP \
-{printf("[%s:%d] c %p [M=%d, N=%d]\n", __FUNCTION__, __LINE__, cptr, M, N); \
-for (int j = 0; j < M; j++) {\
-   for (int i = 0; i < N; i++)\
-       printf(" c[%d,%d] = %f;", j, i, (double)cptr[j * N + i]);\
-   printf("\n");\
-}}
-              PP;
-#endif
-            local_caffe_cpu_gemm//<Dtype>
-                (CblasTrans, CblasNoTrans, this->kernel_dim_ / this->group_,
-                this->conv_out_spatial_dim_, this->conv_out_channels_ / this->group_,
-                (Dtype)1., weight + this->weight_offset_ * g, top_diff + top[i]->offset(n) + this->output_offset_ * g,
-                (Dtype)0., col_buff + this->col_offset_ * g);
+            const Dtype *a = weight + this->weight_offset_ * g,
+                        *b = top_diff + top[i]->offset(n) + this->output_offset_ * g;
+            for (int col = 0; col < this->conv_out_spatial_dim_; ++col) {
+                for (int row = 0; row < kernel_dim_group; ++row) {
+                    Dtype temp = 0;
+                    for (int l = 0; l < out_group_size; ++l)
+                       temp += a[l * kernel_dim_group + row] * b[l * this->conv_out_spatial_dim_ + col];
+                    (col_buff + this->col_offset_ * g)[row * this->conv_out_spatial_dim_ + col] = temp;
+                }
+            }
           }
           if (!this->is_1x1_)
             this->conv_col2im_cpu(col_buff, bottom_diff + bottom[i]->offset(n));
