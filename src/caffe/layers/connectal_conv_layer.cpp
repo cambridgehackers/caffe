@@ -84,7 +84,9 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
   int height_col = (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_) / this->stride_h_ + 1;
   int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_) / this->stride_w_ + 1;
   int channels_col = this->conv_in_channels_ * kernel_hw;
+  int total_in_size = this->conv_in_height_ * this->conv_in_width_ * this->conv_in_channels_;
   Dtype* bias_diff = NULL;
+
   if (this->param_propagate_down_[0])
     caffe_set(this->blobs_[0]->count(), Dtype(0), weight_diff);
   if (this->bias_term_ && this->param_propagate_down_[1]) {
@@ -93,13 +95,10 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
   }
   // For all images
   for (int i = 0; i < top.size(); ++i) {
-    const Dtype* top_diff = top[i]->cpu_diff();
-    const Dtype* bottom_data = bottom[i]->cpu_data();
-    Dtype* bottom_diff = bottom[i]->mutable_cpu_diff();
     // Bias gradient, if necessary.
     if (bias_diff) {
       for (int n = 0; n < this->num_; ++n) {
-        const Dtype *top_diff_bp = top_diff + top[i]->offset(n);
+        const Dtype *top_diff_bp = top[i]->cpu_diff() + top[i]->offset(n);
         for (int j = 0; j < this->num_output_; j++)
           for (int i = 0; i < this->conv_out_spatial_dim_; i++)
             bias_diff[j] += top_diff_bp[j * this->conv_out_spatial_dim_ + i] * this->bias_multiplier_.cpu_data()[i];
@@ -107,36 +106,33 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
     }
     if (this->param_propagate_down_[0] || propagate_down[i]) {
       for (int n = 0; n < this->num_; ++n) {
-        const Dtype *top_diff_bp = top_diff + top[i]->offset(n);
-        const Dtype *bottom_bp = bottom_data + bottom[i]->offset(n);
-        Dtype *bottom_diff_bp =  bottom_diff + bottom[i]->offset(n);
+        const Dtype *top_diff_bp = top[i]->cpu_diff() + top[i]->offset(n);
+        const Dtype *bottom_bp = bottom[i]->cpu_data() + bottom[i]->offset(n);
+        Dtype *bottom_diff_bp =  bottom[i]->mutable_cpu_diff() + bottom[i]->offset(n);
         Dtype *cptr = this->col_buffer_.mutable_cpu_data();
         // gradient w.r.t. weight. Note that we will accumulate diffs.
         if (this->param_propagate_down_[0]) {
-          const Dtype* col_buff = bottom_bp;
-          //if (!this->is_1x1_) {
-            for (int c = 0; c < channels_col; ++c) {
-              int w_offset = c % this->kernel_w_ - this->pad_w_;
-              int h_offset = (c / this->kernel_w_) % this->kernel_h_ - this->pad_h_;
-              int c_im = c / kernel_hw;
-              for (int h = 0; h < height_col; ++h) {
-                int h_pad = h * this->stride_h_ + h_offset;
-                for (int w = 0; w < width_col; ++w) {
-                  int w_pad = w * this->stride_w_ + w_offset;
-                  if (h_pad >= 0 && h_pad < this->conv_in_height_ && w_pad >= 0 && w_pad < this->conv_in_width_)
-                    cptr[(c * height_col + h) * width_col + w] =
-                      bottom_bp[(c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_ + w_pad];
-                  else
-                    cptr[(c * height_col + h) * width_col + w] = 0;
-                }
+          for (int c = 0; c < channels_col; ++c) {
+            int w_offset = c % this->kernel_w_ - this->pad_w_;
+            int h_offset = (c / this->kernel_w_) % this->kernel_h_ - this->pad_h_;
+            int c_im = c / kernel_hw;
+            for (int h = 0; h < height_col; ++h) {
+              int h_pad = h * this->stride_h_ + h_offset;
+              int h_cval = (c * height_col + h) * width_col;
+              int h_bval = (c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_;
+              for (int w = 0; w < width_col; ++w) {
+                int w_pad = w * this->stride_w_ + w_offset;
+                cptr[h_cval + w] =
+                      (h_pad >= 0 && h_pad < this->conv_in_height_
+                       && w_pad >= 0 && w_pad < this->conv_in_width_) ?
+                   bottom_bp[h_bval + w_pad] : 0;
               }
             }
-            col_buff = this->col_buffer_.cpu_data();
-          //}
+          }
           for (int g = 0; g < this->group_; ++g) {
             for (int col = 0; col < kernel_dim_group; ++col) {
               for (int l = 0; l < this->conv_out_spatial_dim_; ++l) {
-                Dtype temp = col_buff[this->col_offset_ * g + col * this->conv_out_spatial_dim_ + l];
+                Dtype temp = this->col_buffer_.cpu_data()[this->col_offset_ * g + col * this->conv_out_spatial_dim_ + l];
                 for (int row = 0; row < out_group_size; ++row)
                   weight_diff[this->weight_offset_ * g + row * kernel_dim_group + col]
                     += temp * top_diff_bp[this->output_offset_ * g + row * this->conv_out_spatial_dim_ + l];
@@ -146,9 +142,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         }
         // gradient w.r.t. bottom data, if necessary.
         if (propagate_down[i]) {
-          Dtype* col_buff = cptr;
-          //if (this->is_1x1_)
-            //col_buff = bottom_diff_bp;
           for (int g = 0; g < this->group_; ++g) {
             for (int col = 0; col < this->conv_out_spatial_dim_; ++col) {
               for (int row = 0; row < kernel_dim_group; ++row) {
@@ -156,27 +149,27 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                 for (int l = 0; l < out_group_size; ++l)
                   temp += weight[this->weight_offset_ * g + l * kernel_dim_group + row]
                     * top_diff_bp[this->output_offset_ * g + l * this->conv_out_spatial_dim_ + col];
-                col_buff[this->col_offset_ * g + row * this->conv_out_spatial_dim_ + col] = temp;
+                cptr[this->col_offset_ * g + row * this->conv_out_spatial_dim_ + col] = temp;
               }
             }
           }
-          //if (!this->is_1x1_) {
-            caffe_set(this->conv_in_height_ * this->conv_in_width_ * this->conv_in_channels_, Dtype(0), bottom_diff_bp);
-            for (int c = 0; c < channels_col; ++c) {
-              int w_offset = c % this->kernel_w_ - this->pad_w_;
-              int h_offset = (c / this->kernel_w_) % this->kernel_h_ - this->pad_h_;
-              int c_im = c / kernel_hw;
-              for (int h = 0; h < height_col; ++h) {
-                int h_pad = h * this->stride_h_ + h_offset;
-                for (int w = 0; w < width_col; ++w) {
-                  int w_pad = w * this->stride_w_ + w_offset;
-                  if (h_pad >= 0 && h_pad < this->conv_in_height_ && w_pad >= 0 && w_pad < this->conv_in_width_)
-                    bottom_diff_bp[(c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_ + w_pad] +=
-                        col_buff[(c * height_col + h) * width_col + w];
-                }
+          caffe_set(total_in_size, Dtype(0), bottom_diff_bp);
+          for (int c = 0; c < channels_col; ++c) {
+            int w_offset = c % this->kernel_w_ - this->pad_w_;
+            int h_offset = (c / this->kernel_w_) % this->kernel_h_ - this->pad_h_;
+            int c_im = c / kernel_hw;
+            for (int h = 0; h < height_col; ++h) {
+              int h_pad = h * this->stride_h_ + h_offset;
+              int h_cval = (c * height_col + h) * width_col;
+              int h_bval = (c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_;
+              for (int w = 0; w < width_col; ++w) {
+                int w_pad = w * this->stride_w_ + w_offset;
+                if (h_pad >= 0 && h_pad < this->conv_in_height_
+                 && w_pad >= 0 && w_pad < this->conv_in_width_)
+                  bottom_diff_bp[h_bval + w_pad] += cptr[h_cval + w];
               }
             }
-          //}
+          }
         }
       }
     }
