@@ -116,10 +116,14 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       Dtype* bias_diff = this->blobs_[1]->mutable_cpu_diff();
       for (int n = 0; n < this->num_; ++n) {
 #ifndef OLDVER
-//void cblas_sgemv(TransA, M, N, alpha, *A, lda, *X, incX, beta, *Y, incY);
-//(CblasNoTrans, this->num_output_, N, 1., top_diff + top[i]->offset(n), N, this->bias_multiplier_.cpu_data(), 1, 1., bias_diff, 1);
-        caffe_cpu_gemv<Dtype>(CblasNoTrans, this->num_output_, this->height_out_ * this->width_out_, 1.,
-            top_diff + top[i]->offset(n), this->bias_multiplier_.cpu_data(), 1., bias_diff);
+       int N = this->height_out_ * this->width_out_;
+       const Dtype *A = top_diff + top[i]->offset(n);
+       for (int j = 0; j < this->num_output_; j++) {
+           Dtype temp = 0;
+           for (int i = 0; i < N; i++)
+               temp += A[j * N + i] * this->bias_multiplier_.cpu_data()[i];
+           bias_diff[j] += temp;
+       }
 #else
         caffe_cpu_gemv<Dtype>(CblasNoTrans, this->num_output_, this->height_out_ * this->width_out_, 1.,
             top_diff + top[i]->offset(n), this->bias_multiplier_.cpu_data(), 1., bias_diff);
