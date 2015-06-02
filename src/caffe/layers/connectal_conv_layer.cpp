@@ -108,9 +108,12 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
     }
     if (this->param_propagate_down_[0] || propagate_down[i]) {
       for (int n = 0; n < this->num_; ++n) {
+        const Dtype *top_diff_bp = top_diff + top[i]->offset(n);
+        const Dtype *bottom_bp = bottom_data + bottom[i]->offset(n);
+        Dtype *bottom_diff_bp =  bottom_diff + bottom[i]->offset(n);
         // gradient w.r.t. weight. Note that we will accumulate diffs.
         if (this->param_propagate_down_[0]) {
-          const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
+          const Dtype* col_buff = bottom_bp;
           if (!this->is_1x1_) {
             for (int c = 0; c < channels_col; ++c) {
               int w_offset = c % this->kernel_w_;
@@ -122,7 +125,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                   int w_pad = w * this->stride_w_ - this->pad_w_ + w_offset;
                   if (h_pad >= 0 && h_pad < this->conv_in_height_ && w_pad >= 0 && w_pad < this->conv_in_width_)
                     (this->col_buffer_.mutable_cpu_data())[(c * height_col + h) * width_col + w] =
-                      (bottom_data + bottom[i]->offset(n))[(c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_ + w_pad];
+                      bottom_bp[(c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_ + w_pad];
                   else
                     (this->col_buffer_.mutable_cpu_data())[(c * height_col + h) * width_col + w] = 0;
                 }
@@ -136,7 +139,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                     Dtype temp = (col_buff + this->col_offset_ * g)[col * this->conv_out_spatial_dim_ + l];
                     for (int row = 0; row < out_group_size; ++row)
                         (weight_diff + this->weight_offset_ * g)[row * kernel_dim_group + col]
-                            += temp * (top_diff + top[i]->offset(n) + this->output_offset_ * g)
+                            += temp * (top_diff_bp + this->output_offset_ * g)
                                [row * this->conv_out_spatial_dim_ + l];
                 }
             }
@@ -146,20 +149,20 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         if (propagate_down[i]) {
           Dtype* col_buff = this->col_buffer_.mutable_cpu_data();
           if (this->is_1x1_)
-            col_buff = bottom_diff + bottom[i]->offset(n);
+            col_buff = bottom_diff_bp;
           for (int g = 0; g < this->group_; ++g) {
             for (int col = 0; col < this->conv_out_spatial_dim_; ++col) {
                 for (int row = 0; row < kernel_dim_group; ++row) {
                     Dtype temp = 0;
                     for (int l = 0; l < out_group_size; ++l)
                        temp += (weight + this->weight_offset_ * g)[l * kernel_dim_group + row]
-                          * (top_diff + top[i]->offset(n) + this->output_offset_ * g)[l * this->conv_out_spatial_dim_ + col];
+                          * (top_diff_bp + this->output_offset_ * g)[l * this->conv_out_spatial_dim_ + col];
                     (col_buff + this->col_offset_ * g)[row * this->conv_out_spatial_dim_ + col] = temp;
                 }
             }
           }
           if (!this->is_1x1_) {
-            caffe_set(this->conv_in_height_ * this->conv_in_width_ * this->conv_in_channels_, Dtype(0), (bottom_diff + bottom[i]->offset(n)));
+            caffe_set(this->conv_in_height_ * this->conv_in_width_ * this->conv_in_channels_, Dtype(0), bottom_diff_bp);
             for (int c = 0; c < channels_col; ++c) {
               int w_offset = c % this->kernel_w_;
               int h_offset = (c / this->kernel_w_) % this->kernel_h_;
@@ -169,8 +172,8 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                   int h_pad = h * this->stride_h_ - this->pad_h_ + h_offset;
                   int w_pad = w * this->stride_w_ - this->pad_w_ + w_offset;
                   if (h_pad >= 0 && h_pad < this->conv_in_height_ && w_pad >= 0 && w_pad < this->conv_in_width_)
-                    (bottom_diff + bottom[i]->offset(n))[(c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_ + w_pad] +=
-                        (col_buff)[(c * height_col + h) * width_col + w];
+                    bottom_diff_bp[(c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_ + w_pad] +=
+                        col_buff[(c * height_col + h) * width_col + w];
                 }
               }
             }
