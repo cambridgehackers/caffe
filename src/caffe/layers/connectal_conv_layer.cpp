@@ -84,27 +84,25 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
   int height_col = (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_) / this->stride_h_ + 1;
   int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_) / this->stride_w_ + 1;
   int channels_col = this->conv_in_channels_ * kernel_hw;
+  Dtype* bias_diff = NULL;
   if (this->param_propagate_down_[0])
     caffe_set(this->blobs_[0]->count(), Dtype(0), weight_diff);
-  if (this->bias_term_ && this->param_propagate_down_[1])
-    caffe_set(this->blobs_[1]->count(), Dtype(0), this->blobs_[1]->mutable_cpu_diff());
+  if (this->bias_term_ && this->param_propagate_down_[1]) {
+    bias_diff = this->blobs_[1]->mutable_cpu_diff();
+    caffe_set(this->blobs_[1]->count(), Dtype(0), bias_diff);
+  }
   // For all images
   for (int i = 0; i < top.size(); ++i) {
     const Dtype* top_diff = top[i]->cpu_diff();
     const Dtype* bottom_data = bottom[i]->cpu_data();
     Dtype* bottom_diff = bottom[i]->mutable_cpu_diff();
     // Bias gradient, if necessary.
-    if (this->bias_term_ && this->param_propagate_down_[1]) {
-      Dtype* bias_diff = this->blobs_[1]->mutable_cpu_diff();
+    if (bias_diff) {
       for (int n = 0; n < this->num_; ++n) {
-        int N = this->height_out_ * this->width_out_;
         const Dtype *top_diff_bp = top_diff + top[i]->offset(n);
-        for (int j = 0; j < this->num_output_; j++) {
-          Dtype temp = 0;
-          for (int i = 0; i < N; i++)
-            temp += top_diff_bp[j * N + i] * this->bias_multiplier_.cpu_data()[i];
-          bias_diff[j] += temp;
-        }
+        for (int j = 0; j < this->num_output_; j++)
+          for (int i = 0; i < this->conv_out_spatial_dim_; i++)
+            bias_diff[j] += top_diff_bp[j * this->conv_out_spatial_dim_ + i] * this->bias_multiplier_.cpu_data()[i];
       }
     }
     if (this->param_propagate_down_[0] || propagate_down[i]) {
@@ -116,7 +114,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         // gradient w.r.t. weight. Note that we will accumulate diffs.
         if (this->param_propagate_down_[0]) {
           const Dtype* col_buff = bottom_bp;
-          if (!this->is_1x1_) {
+          //if (!this->is_1x1_) {
             for (int c = 0; c < channels_col; ++c) {
               int w_offset = c % this->kernel_w_ - this->pad_w_;
               int h_offset = (c / this->kernel_w_) % this->kernel_h_ - this->pad_h_;
@@ -134,7 +132,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
               }
             }
             col_buff = this->col_buffer_.cpu_data();
-          }
+          //}
           for (int g = 0; g < this->group_; ++g) {
             for (int col = 0; col < kernel_dim_group; ++col) {
               for (int l = 0; l < this->conv_out_spatial_dim_; ++l) {
@@ -149,8 +147,8 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         // gradient w.r.t. bottom data, if necessary.
         if (propagate_down[i]) {
           Dtype* col_buff = cptr;
-          if (this->is_1x1_)
-            col_buff = bottom_diff_bp;
+          //if (this->is_1x1_)
+            //col_buff = bottom_diff_bp;
           for (int g = 0; g < this->group_; ++g) {
             for (int col = 0; col < this->conv_out_spatial_dim_; ++col) {
               for (int row = 0; row < kernel_dim_group; ++row) {
@@ -162,7 +160,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
               }
             }
           }
-          if (!this->is_1x1_) {
+          //if (!this->is_1x1_) {
             caffe_set(this->conv_in_height_ * this->conv_in_width_ * this->conv_in_channels_, Dtype(0), bottom_diff_bp);
             for (int c = 0; c < channels_col; ++c) {
               int w_offset = c % this->kernel_w_ - this->pad_w_;
@@ -178,7 +176,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                 }
               }
             }
-          }
+          //}
         }
       }
     }
