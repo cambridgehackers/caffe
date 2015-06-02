@@ -137,13 +137,13 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
             col_buff = this->col_buffer_.cpu_data();
           }
           for (int g = 0; g < this->group_; ++g) {
-            const Dtype *a = top_diff + top[i]->offset(n) + this->output_offset_ * g,
-                        *b = col_buff + this->col_offset_ * g;
             for (int col = 0; col < kernel_dim_group; ++col) {
                 for (int l = 0; l < this->conv_out_spatial_dim_; ++l) {
-                    Dtype temp = b[col * this->conv_out_spatial_dim_ + l];
+                    Dtype temp = (col_buff + this->col_offset_ * g)[col * this->conv_out_spatial_dim_ + l];
                     for (int row = 0; row < out_group_size; ++row)
-                        (weight_diff + this->weight_offset_ * g)[row * kernel_dim_group + col] += temp * a[row * this->conv_out_spatial_dim_ + l];
+                        (weight_diff + this->weight_offset_ * g)[row * kernel_dim_group + col]
+                            += temp * (top_diff + top[i]->offset(n) + this->output_offset_ * g)
+                               [row * this->conv_out_spatial_dim_ + l];
                 }
             }
           }
@@ -168,13 +168,12 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
           if (this->is_1x1_)
             col_buff = bottom_diff + bottom[i]->offset(n);
           for (int g = 0; g < this->group_; ++g) {
-            const Dtype *a = weight + this->weight_offset_ * g,
-                        *b = top_diff + top[i]->offset(n) + this->output_offset_ * g;
             for (int col = 0; col < this->conv_out_spatial_dim_; ++col) {
                 for (int row = 0; row < kernel_dim_group; ++row) {
                     Dtype temp = 0;
                     for (int l = 0; l < out_group_size; ++l)
-                       temp += a[l * kernel_dim_group + row] * b[l * this->conv_out_spatial_dim_ + col];
+                       temp += (weight + this->weight_offset_ * g)[l * kernel_dim_group + row]
+                          * (top_diff + top[i]->offset(n) + this->output_offset_ * g)[l * this->conv_out_spatial_dim_ + col];
                     (col_buff + this->col_offset_ * g)[row * this->conv_out_spatial_dim_ + col] = temp;
                 }
             }
