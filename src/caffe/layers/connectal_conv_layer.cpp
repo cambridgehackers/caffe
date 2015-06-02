@@ -8,6 +8,57 @@
 
 //#define OLDVER
 namespace caffe {
+#if 1
+#define local_conv_im2col_cpu(data, col_buff) { \
+  int height_col = (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_) / this->stride_h_ + 1; \
+  int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_) / this->stride_w_ + 1; \
+  int channels_col = this->conv_in_channels_ * this->kernel_h_ * this->kernel_w_; \
+  for (int c = 0; c < channels_col; ++c) { \
+    int w_offset = c % this->kernel_w_; \
+    int h_offset = (c / this->kernel_w_) % this->kernel_h_; \
+    int c_im = c / this->kernel_h_ / this->kernel_w_; \
+    for (int h = 0; h < height_col; ++h) { \
+      for (int w = 0; w < width_col; ++w) { \
+        int h_pad = h * this->stride_h_ - this->pad_h_ + h_offset; \
+        int w_pad = w * this->stride_w_ - this->pad_w_ + w_offset; \
+        if (h_pad >= 0 && h_pad < this->conv_in_height_ && w_pad >= 0 && w_pad < this->conv_in_width_) \
+          (col_buff)[(c * height_col + h) * width_col + w] = \
+            (data)[(c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_ + w_pad]; \
+        else \
+          (col_buff)[(c * height_col + h) * width_col + w] = 0; \
+      } \
+    } \
+  } \
+}
+
+#define local_conv_col2im_cpu(col_buff, data) { \
+  caffe_set(this->conv_in_height_ * this->conv_in_width_ * this->conv_in_channels_, Dtype(0), (data)); \
+  int height_col = (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_) / this->stride_h_ + 1; \
+  int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_) / this->stride_w_ + 1; \
+  int channels_col = this->conv_in_channels_ * this->kernel_h_ * this->kernel_w_; \
+  for (int c = 0; c < channels_col; ++c) { \
+    int w_offset = c % this->kernel_w_; \
+    int h_offset = (c / this->kernel_w_) % this->kernel_h_; \
+    int c_im = c / this->kernel_h_ / this->kernel_w_; \
+    for (int h = 0; h < height_col; ++h) { \
+      for (int w = 0; w < width_col; ++w) { \
+        int h_pad = h * this->stride_h_ - this->pad_h_ + h_offset; \
+        int w_pad = w * this->stride_w_ - this->pad_w_ + w_offset; \
+        if (h_pad >= 0 && h_pad < this->conv_in_height_ && w_pad >= 0 && w_pad < this->conv_in_width_) \
+          (data)[(c_im * this->conv_in_height_ + h_pad) * this->conv_in_width_ + w_pad] += \
+              (col_buff)[(c * height_col + h) * width_col + w]; \
+      } \
+    } \
+  } \
+}
+
+  //void im2col_cpu(const Dtype* (data), const int this->conv_in_channels_, const int this->conv_in_height_, const int this->conv_in_width_, const int this->kernel_h_, const int this->kernel_w_, const int this->pad_h_, const int this->pad_w_, const int this->stride_h_, const int this->stride_w_, Dtype* col_buff)
+//void col2im_cpu(const Dtype* col_buff, const int this->conv_in_channels_, const int this->conv_in_height_, const int this->conv_in_width_, const int this->kernel_h_, const int this->kernel_w_, const int this->pad_h_, const int this->pad_w_, const int this->stride_h_, const int this->stride_w_, Dtype* (data))
+  //inline void conv_im2col_cpu(const Dtype* data, Dtype* col_buff) {
+  //inline void conv_col2im_cpu(const Dtype* col_buff, Dtype* data) {
+    //col2im_cpu(col_buff, conv_in_channels_, conv_in_height_, conv_in_width_, kernel_h_, kernel_w_, pad_h_, pad_w_, stride_h_, stride_w_, data);
+        //im2col_cpu(data, conv_in_channels_, conv_in_height_, conv_in_width_, kernel_h_, kernel_w_, pad_h_, pad_w_, stride_h_, stride_w_, col_buff);
+#endif
 
 template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
@@ -137,7 +188,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
 #ifndef OLDVER
           const Dtype* col_buff = bottom_data + bottom[i]->offset(n);
           if (!this->is_1x1_) {
-            this->conv_im2col_cpu(col_buff, this->col_buffer_.mutable_cpu_data());
+            local_conv_im2col_cpu(col_buff, this->col_buffer_.mutable_cpu_data());
             col_buff = this->col_buffer_.cpu_data();
           }
           for (int g = 0; g < this->group_; ++g) {
@@ -183,7 +234,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
             }
           }
           if (!this->is_1x1_)
-            this->conv_col2im_cpu(col_buff, bottom_diff + bottom[i]->offset(n));
+            local_conv_col2im_cpu(col_buff, bottom_diff + bottom[i]->offset(n));
 #else
           Dtype* col_buff = this->col_buffer_.mutable_cpu_data();
           if (this->is_1x1_)
