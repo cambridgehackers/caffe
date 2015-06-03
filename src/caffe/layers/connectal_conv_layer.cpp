@@ -84,9 +84,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
   int out_group_size = this->conv_out_channels_ / this->group_;
   int kernel_hw = this->kernel_h_ * this->kernel_w_;
   int bottom_hw = this->conv_in_height_ * this->conv_in_width_;
-  int height_col = (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_) / this->stride_h_;
-  int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_) / this->stride_w_;
-  int total_in_size = bottom_hw * this->conv_in_channels_;
   Dtype* bias_diff = NULL;
 
   if (this->param_propagate_down_[0])
@@ -113,6 +110,8 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         Dtype *bottom_diff_bp =  bottom[i]->mutable_cpu_diff() + bottom[i]->offset(n);
         Dtype *cptr = this->col_buffer_.mutable_cpu_data();
         // gradient w.r.t. weight. Note that we will accumulate diffs.
+  int height_col = (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_) / this->stride_h_;
+  int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_) / this->stride_w_;
         if (this->param_propagate_down_[0]) {
           for (int g = 0; g < this->group_; ++g) {
             for (int cchan = 0; cchan < in_group_size; ++cchan) {
@@ -143,12 +142,12 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         }
         // gradient w.r.t. bottom data, if necessary.
         if (propagate_down[i]) {
-          caffe_set(total_in_size, Dtype(0), bottom_diff_bp);
           for (int g = 0; g < this->group_; ++g) {
             for (int cchan = 0; cchan < in_group_size; ++cchan) {
+              int garea = g * in_group_size + cchan;
+              caffe_set(bottom_hw, Dtype(0), bottom_diff_bp + garea * bottom_hw);
               for (int p = 0; p < this->kernel_h_; ++p) {
                 for (int q = 0; q < this->kernel_w_; ++q) {
-                  int garea = g * in_group_size + cchan;
                   int carea = garea * kernel_hw + p * this->kernel_w_ + q;
                   for (int xy = 0; xy < this->conv_out_spatial_dim_; ++xy) {
                     Dtype temp = 0;
