@@ -124,16 +124,14 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                     if (h_pad >= 0 && h_pad < this->conv_in_height_
                        && w_pad >= 0 && w_pad < this->conv_in_width_) {
                       for (int oindex = 0; oindex < out_group_size; ++oindex) {
-                        int toff = (out_group_size * g + oindex) * this->conv_out_spatial_dim_ + h * (width_col + 1) + w;
+                        Dtype tdiff = top_diff_bp[(out_group_size * g + oindex) * this->conv_out_spatial_dim_ + h * (width_col + 1) + w];
                         int woff = this->weight_offset_ * g + (oindex * in_group_size + cchan) * kernel_hw + p * this->kernel_w_ + q;
-                        if (this->param_propagate_down_[0]) {
-                          // gradient w.r.t. weight. Note that we will accumulate diffs.
-                          weight_diff[woff] += bottom_bp[garea] * top_diff_bp[toff];
-                        }
-                        if (propagate_down[i]) {
-                          // gradient w.r.t. bottom data, if necessary.
-                          bottom_diff_bp[garea] += weight[woff] * top_diff_bp[toff];
-                        }
+                        // gradient w.r.t. weight. Note that we will accumulate diffs.
+                        if (this->param_propagate_down_[0])
+                          weight_diff[woff] += bottom_bp[garea] * tdiff;
+                        // gradient w.r.t. bottom data, if necessary.
+                        if (propagate_down[i])
+                          bottom_diff_bp[garea] += weight[woff] * tdiff;
                       }
                     }
                   }
