@@ -108,7 +108,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         const Dtype *top_diff_bp = top[i]->cpu_diff() + top[i]->offset(n);
         const Dtype *bottom_bp = bottom[i]->cpu_data() + bottom[i]->offset(n);
         Dtype *bottom_diff_bp =  bottom[i]->mutable_cpu_diff() + bottom[i]->offset(n);
-        Dtype *cptr = this->col_buffer_.mutable_cpu_data();
         if (propagate_down[i])
           caffe_set(bottom_hw * this->conv_in_channels_, Dtype(0), bottom_diff_bp);
         for (int g = 0; g < this->group_; ++g) {
@@ -120,18 +119,14 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
               for (int q = 0; q < this->kernel_w_; ++q) {
                 // gradient w.r.t. weight. Note that we will accumulate diffs.
                 if (this->param_propagate_down_[0]) {
-                  for (int h = 0; h < (height_col + 1); ++h) {
-                    for (int w = 0; w < (width_col + 1); ++w) {
-                      int h_pad = h * this->stride_h_ + p - this->pad_h_;
-                      int w_pad = w * this->stride_w_ + q - this->pad_w_;
-                      cptr[h * (width_col + 1) + w] =
-                        (h_pad >= 0 && h_pad < this->conv_in_height_
+                  for (int xy = 0; xy < this->conv_out_spatial_dim_; ++xy) {
+                    int h = xy / (width_col + 1);
+                    int w = xy % (width_col + 1);
+                    int h_pad = h * this->stride_h_ + p - this->pad_h_;
+                    int w_pad = w * this->stride_w_ + q - this->pad_w_;
+                    Dtype temp = (h_pad >= 0 && h_pad < this->conv_in_height_
                          && w_pad >= 0 && w_pad < this->conv_in_width_) ?
                          bottom_bp[garea * bottom_hw + h_pad * this->conv_in_width_ + w_pad] : 0;
-                    }
-                  }
-                  for (int xy = 0; xy < this->conv_out_spatial_dim_; ++xy) {
-                    Dtype temp = cptr[xy];
                     for (int oindex = 0; oindex < out_group_size; ++oindex)
                       weight_diff[this->weight_offset_ * g + (oindex * in_group_size + cchan) * kernel_hw + p * this->kernel_w_ + q]
                         += temp * top_diff_bp[(out_group_size * g + oindex) * this->conv_out_spatial_dim_ + xy];
