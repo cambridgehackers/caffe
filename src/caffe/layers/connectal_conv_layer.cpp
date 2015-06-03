@@ -139,21 +139,18 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                 }
                 // gradient w.r.t. bottom data, if necessary.
                 if (propagate_down[i]) {
-                  for (int xy = 0; xy < this->conv_out_spatial_dim_; ++xy) {
-                    Dtype temp = 0;
-                    for (int oindex = 0; oindex < out_group_size; ++oindex)
-                      temp += weight[this->weight_offset_ * g + (oindex * in_group_size + cchan) * kernel_hw + p * this->kernel_w_ + q]
-                        * top_diff_bp[(out_group_size * g + oindex) * this->conv_out_spatial_dim_ + xy];
-                    cptr[xy] = temp;
-                  }
                   for (int h = 0; h < (height_col + 1); ++h) {
                     for (int w = 0; w < (width_col + 1); ++w) {
                       int h_pad = h * this->stride_h_ + p - this->pad_h_;
                       int w_pad = w * this->stride_w_ + q - this->pad_w_;
                       if (h_pad >= 0 && h_pad < this->conv_in_height_
-                       && w_pad >= 0 && w_pad < this->conv_in_width_)
-                        bottom_diff_bp[garea * bottom_hw + h_pad * this->conv_in_width_ + w_pad]
-                         += cptr[h * (width_col + 1) + w];
+                       && w_pad >= 0 && w_pad < this->conv_in_width_) {
+                        Dtype temp = 0;
+                        for (int oindex = 0; oindex < out_group_size; ++oindex)
+                          temp += weight[this->weight_offset_ * g + (oindex * in_group_size + cchan) * kernel_hw + p * this->kernel_w_ + q]
+                            * top_diff_bp[(out_group_size * g + oindex) * this->conv_out_spatial_dim_ + h * (width_col + 1) + w];
+                        bottom_diff_bp[garea * bottom_hw + h_pad * this->conv_in_width_ + w_pad] += temp;
+                      }
                     }
                   }
                 }
