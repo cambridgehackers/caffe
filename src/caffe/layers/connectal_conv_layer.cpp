@@ -1,23 +1,17 @@
-#include <vector>
-
 #include "caffe/filler.hpp"
 #include "caffe/layer.hpp"
-#include "caffe/util/im2col.hpp"
-#include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
-
 namespace caffe {
-
 template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top)
 {
   const Dtype* weight = this->blobs_[0]->cpu_data();
-  const Dtype* bias = this->bias_term_ ? this->blobs_[1]->cpu_data() : NULL;
   int bottom_hw = this->conv_in_height_ * this->conv_in_width_;
   int kernel_hw = this->kernel_h_ * this->kernel_w_;
   int out_group_size = this->conv_out_channels_ / this->group_;
   int in_group_size = this->conv_in_channels_ / this->group_;
+  const Dtype* bias = this->bias_term_ ? this->blobs_[1]->cpu_data() : NULL;
   // For each input, ...
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->cpu_data();
@@ -79,13 +73,12 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 {
   const Dtype* weight = this->blobs_[0]->cpu_data();
-  Dtype* weight_diff = this->blobs_[0]->mutable_cpu_diff();
-  int in_group_size = this->conv_in_channels_ / this->group_;
-  int out_group_size = this->conv_out_channels_ / this->group_;
-  int kernel_hw = this->kernel_h_ * this->kernel_w_;
   int bottom_hw = this->conv_in_height_ * this->conv_in_width_;
+  int kernel_hw = this->kernel_h_ * this->kernel_w_;
+  int out_group_size = this->conv_out_channels_ / this->group_;
+  int in_group_size = this->conv_in_channels_ / this->group_;
+  Dtype* weight_diff = this->blobs_[0]->mutable_cpu_diff();
   Dtype* bias_diff = NULL;
-
   if (this->param_propagate_down_[0])
     caffe_set(this->blobs_[0]->count(), Dtype(0), weight_diff);
   if (this->bias_term_ && this->param_propagate_down_[1]) {
@@ -94,38 +87,40 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
   }
   // For all images
   for (int i = 0; i < top.size(); ++i) {
-    // Bias gradient, if necessary.
-    if (bias_diff) {
-      for (int n = 0; n < this->num_; ++n) {
-        const Dtype *top_diff_bp = top[i]->cpu_diff() + top[i]->offset(n);
+    for (int n = 0; n < this->num_; ++n) {
+      int boff = n * this->conv_in_channels_ * bottom_hw;
+      const Dtype *top_diff_bp = top[i]->cpu_diff()
+          + n * this->conv_out_channels_ * this->conv_out_spatial_dim_;
+      const Dtype *bottom_bp = bottom[i]->cpu_data() + boff;
+      Dtype *bottom_diff_bp =  bottom[i]->mutable_cpu_diff() + boff;
+      // Bias gradient, if necessary.
+      if (bias_diff) {
+        const Dtype *tptr = top_diff_bp;
         for (int j = 0; j < this->num_output_; j++)
           for (int i = 0; i < this->conv_out_spatial_dim_; i++)
-            bias_diff[j] += top_diff_bp[j * this->conv_out_spatial_dim_ + i] * this->bias_multiplier_.cpu_data()[i];
+            bias_diff[j] += *tptr++ * this->bias_multiplier_.cpu_data()[i];
       }
-    }
-    if (this->param_propagate_down_[0] || propagate_down[i]) {
-      for (int n = 0; n < this->num_; ++n) {
-        const Dtype *top_diff_bp = top[i]->cpu_diff() + top[i]->offset(n);
-        const Dtype *bottom_bp = bottom[i]->cpu_data() + bottom[i]->offset(n);
-        Dtype *bottom_diff_bp =  bottom[i]->mutable_cpu_diff() + bottom[i]->offset(n);
-        if (propagate_down[i])
-          caffe_set(bottom_hw * this->conv_in_channels_, Dtype(0), bottom_diff_bp);
+      if (propagate_down[i])
+        caffe_set(bottom_hw * this->conv_in_channels_, Dtype(0), bottom_diff_bp);
+      if (this->param_propagate_down_[0] || propagate_down[i]) {
         for (int g = 0; g < this->group_; ++g) {
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
-            int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_) / this->stride_w_;
-            int height_col = (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_) / this->stride_h_;
             for (int p = 0; p < this->kernel_h_; ++p) {
               for (int q = 0; q < this->kernel_w_; ++q) {
-                for (int h = 0; h < (height_col + 1); ++h) {
-                  for (int w = 0; w < (width_col + 1); ++w) {
-                    int h_pad = h * this->stride_h_ + p - this->pad_h_;
-                    int w_pad = w * this->stride_w_ + q - this->pad_w_;
-                    int garea = (g * in_group_size + cchan) * bottom_hw + h_pad * this->conv_in_width_ + w_pad;
-                    if (h_pad >= 0 && h_pad < this->conv_in_height_
-                       && w_pad >= 0 && w_pad < this->conv_in_width_) {
+                int wbase = g * this->weight_offset_ + cchan * kernel_hw + p * this->kernel_w_ + q;
+                for (int y = 0; y < (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_ + this->stride_h_) / this->stride_h_; ++y){
+                  int h_pad = (y * this->stride_h_ + p - this->pad_h_) * this->conv_in_width_;
+  int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_ + this->stride_w_);
+                  int tbase = g * out_group_size * this->conv_out_spatial_dim_ + y * width_col / this->stride_w_;
+                  int gbase = g * in_group_size * bottom_hw + cchan * bottom_hw + h_pad;
+                  if (h_pad >= 0 && h_pad < bottom_hw)
+                  for (int x = 0; x < width_col / this->stride_w_; ++x) {
+                    int w_pad = x * this->stride_w_ + q - this->pad_w_;
+                    int garea = gbase + w_pad;
+                    if (w_pad >= 0 && w_pad < this->conv_in_width_) {
                       for (int oindex = 0; oindex < out_group_size; ++oindex) {
-                        Dtype tdiff = top_diff_bp[(out_group_size * g + oindex) * this->conv_out_spatial_dim_ + h * (width_col + 1) + w];
-                        int woff = this->weight_offset_ * g + (oindex * in_group_size + cchan) * kernel_hw + p * this->kernel_w_ + q;
+                        Dtype tdiff = top_diff_bp[oindex * this->conv_out_spatial_dim_ + x + tbase];
+                        int woff = wbase + oindex * in_group_size * kernel_hw;
                         // gradient w.r.t. weight. Note that we will accumulate diffs.
                         if (this->param_propagate_down_[0])
                           weight_diff[woff] += bottom_bp[garea] * tdiff;
