@@ -112,7 +112,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
           caffe_set(bottom_hw * this->conv_in_channels_, Dtype(0), bottom_diff_bp);
         for (int g = 0; g < this->group_; ++g) {
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
-            int garea = g * in_group_size + cchan;
             int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_) / this->stride_w_;
             int height_col = (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_) / this->stride_h_;
             for (int p = 0; p < this->kernel_h_; ++p) {
@@ -121,24 +120,20 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                   for (int w = 0; w < (width_col + 1); ++w) {
                     int h_pad = h * this->stride_h_ + p - this->pad_h_;
                     int w_pad = w * this->stride_w_ + q - this->pad_w_;
+                    int garea = (g * in_group_size + cchan) * bottom_hw + h_pad * this->conv_in_width_ + w_pad;
                     if (h_pad >= 0 && h_pad < this->conv_in_height_
                        && w_pad >= 0 && w_pad < this->conv_in_width_) {
-                      // gradient w.r.t. weight. Note that we will accumulate diffs.
-                      if (this->param_propagate_down_[0]) {
-                        Dtype temp = bottom_bp[garea * bottom_hw + h_pad * this->conv_in_width_ + w_pad];
-                        for (int oindex = 0; oindex < out_group_size; ++oindex)
-                          weight_diff[this->weight_offset_ * g
-                             + (oindex * in_group_size + cchan) * kernel_hw
-                             + p * this->kernel_w_ + q]
-                            += temp * top_diff_bp[(out_group_size * g + oindex) * this->conv_out_spatial_dim_ + h * (width_col + 1) + w];
-                      }
-                      // gradient w.r.t. bottom data, if necessary.
-                      if (propagate_down[i]) {
-                        Dtype temp = 0;
-                        for (int oindex = 0; oindex < out_group_size; ++oindex)
-                          temp += weight[this->weight_offset_ * g + (oindex * in_group_size + cchan) * kernel_hw + p * this->kernel_w_ + q]
-                            * top_diff_bp[(out_group_size * g + oindex) * this->conv_out_spatial_dim_ + h * (width_col + 1) + w];
-                        bottom_diff_bp[garea * bottom_hw + h_pad * this->conv_in_width_ + w_pad] += temp;
+                      for (int oindex = 0; oindex < out_group_size; ++oindex) {
+                        int toff = (out_group_size * g + oindex) * this->conv_out_spatial_dim_ + h * (width_col + 1) + w;
+                        int woff = this->weight_offset_ * g + (oindex * in_group_size + cchan) * kernel_hw + p * this->kernel_w_ + q;
+                        if (this->param_propagate_down_[0]) {
+                          // gradient w.r.t. weight. Note that we will accumulate diffs.
+                          weight_diff[woff] += bottom_bp[garea] * top_diff_bp[toff];
+                        }
+                        if (propagate_down[i]) {
+                          // gradient w.r.t. bottom data, if necessary.
+                          bottom_diff_bp[garea] += weight[woff] * top_diff_bp[toff];
+                        }
                       }
                     }
                   }
