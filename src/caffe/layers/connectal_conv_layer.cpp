@@ -108,28 +108,33 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
             for (int p = 0; p < this->kernel_h_; ++p) {
               for (int q = 0; q < this->kernel_w_; ++q) {
                 int wbase = g * this->weight_offset_ + cchan * kernel_hw + p * this->kernel_w_ + q;
-                for (int y = 0; y < (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_ + this->stride_h_) / this->stride_h_; ++y){
-                  int h_pad = (y * this->stride_h_ + p - this->pad_h_) * this->conv_in_width_;
+                int gchan = g * in_group_size * bottom_hw + cchan * bottom_hw;
+                int gbase = gchan + (p - this->pad_h_) * this->conv_in_width_;
+                int tbase = g * this->output_offset_;
+                for (int yunused = 0; yunused < (this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_ + this->stride_h_) / this->stride_h_; ++yunused){
   int width_col = (this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_ + this->stride_w_);
-                  int tbase = g * out_group_size * this->conv_out_spatial_dim_ + y * width_col / this->stride_w_;
-                  int gbase = g * in_group_size * bottom_hw + cchan * bottom_hw + h_pad;
-                  if (h_pad >= 0 && h_pad < bottom_hw)
-                  for (int x = 0; x < width_col / this->stride_w_; ++x) {
-                    int w_pad = x * this->stride_w_ + q - this->pad_w_;
-                    int garea = gbase + w_pad;
-                    if (w_pad >= 0 && w_pad < this->conv_in_width_) {
+                  int toff = tbase;
+                  int garea = gbase + q - this->pad_w_;
+                  if (gbase >= gchan && gbase < gchan + bottom_hw)
+                  for (int xunused = 0; xunused < width_col / this->stride_w_; ++xunused) {
+                    int woff = wbase;
+                    const Dtype *tdptr = &top_diff_bp[toff++];
+                    if (garea >= gbase && garea < gbase + this->conv_in_width_) {
                       for (int oindex = 0; oindex < out_group_size; ++oindex) {
-                        Dtype tdiff = top_diff_bp[oindex * this->conv_out_spatial_dim_ + x + tbase];
-                        int woff = wbase + oindex * in_group_size * kernel_hw;
                         // gradient w.r.t. weight. Note that we will accumulate diffs.
                         if (this->param_propagate_down_[0])
-                          weight_diff[woff] += bottom_bp[garea] * tdiff;
+                          weight_diff[woff] += bottom_bp[garea] * *tdptr;
                         // gradient w.r.t. bottom data, if necessary.
                         if (propagate_down[i])
-                          bottom_diff_bp[garea] += weight[woff] * tdiff;
+                          bottom_diff_bp[garea] += weight[woff] * *tdptr;
+                        woff += in_group_size * kernel_hw;
+                        tdptr += this->conv_out_spatial_dim_;
                       }
                     }
+                    garea += this->stride_w_;
                   }
+                  gbase += this->stride_h_ * this->conv_in_width_;
+                  tbase += width_col / this->stride_w_;
                 }
               }
             }
