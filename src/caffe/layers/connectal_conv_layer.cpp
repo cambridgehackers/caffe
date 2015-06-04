@@ -114,6 +114,8 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
             int gchan = g * in_group_size * bottom_hw + cchan * bottom_hw;
             for (int outindex = 0; outindex < out_group_size; ++outindex) {
+              int wchan = g * this->weight_offset_ + cchan * kernel_hw
+                  + outindex * in_group_size * kernel_hw;
               for (int y = 0; y <= usable_height; y += this->stride_h_){
                 for (int x = 0; x <= usable_width; x += this->stride_w_) {
                   Dtype chain_grad = top_diff_bp[g * this->output_offset_
@@ -125,9 +127,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                     for (int q = 0; q < this->kernel_w_; ++q) {
                       int belement = gbase + q - this->pad_w_ + x;
                       if (belement >= gbase && belement < gbase + this->conv_in_width_) {
-                        int welement = g * this->weight_offset_ + cchan * kernel_hw
-                           + outindex * in_group_size * kernel_hw
-                           + (p * this->kernel_w_) + q;
+                        int welement = wchan + (p * this->kernel_w_) + q;
                         // gradient w.r.t. weight. Note that we will accumulate diffs.
                         if (weight_diff)
                           weight_diff[welement] += bottom_bp[belement] * chain_grad;
