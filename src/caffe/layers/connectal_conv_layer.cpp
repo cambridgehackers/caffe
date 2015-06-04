@@ -112,22 +112,20 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       if (weight_diff || bottom_diff_bp) {
         for (int g = 0; g < this->group_; ++g) {
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
-            int gchan = g * in_group_size * bottom_hw + cchan * bottom_hw;
+            int gchan = (g * in_group_size + cchan) * bottom_hw;
             for (int outindex = 0; outindex < out_group_size; ++outindex) {
-              int wchan = g * this->weight_offset_ + cchan * kernel_hw
-                  + outindex * in_group_size * kernel_hw;
+              int wchan = g * this->weight_offset_ + (cchan + outindex * in_group_size) * kernel_hw;
+              const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
               for (int y = 0; y <= usable_height; y += this->stride_h_){
                 for (int x = 0; x <= usable_width; x += this->stride_w_) {
-                  Dtype chain_grad = top_diff_bp[g * this->output_offset_
-                     + outindex * this->conv_out_spatial_dim_
-                     + (y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
+                  Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
                   for (int p = 0; p < this->kernel_h_; ++p) {
                     int gbase = gchan - this->pad_h_ * this->conv_in_width_ + (p + y) * this->conv_in_width_;
                     if (gbase >= gchan && gbase < gchan + bottom_hw)
                     for (int q = 0; q < this->kernel_w_; ++q) {
-                      int belement = gbase + q - this->pad_w_ + x;
+                      int belement = gbase - this->pad_w_ + x + q;
+                      int welement = wchan + p * this->kernel_w_ + q;
                       if (belement >= gbase && belement < gbase + this->conv_in_width_) {
-                        int welement = wchan + (p * this->kernel_w_) + q;
                         // gradient w.r.t. weight. Note that we will accumulate diffs.
                         if (weight_diff)
                           weight_diff[welement] += bottom_bp[belement] * chain_grad;
