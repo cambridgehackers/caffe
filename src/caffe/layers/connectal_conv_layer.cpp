@@ -113,24 +113,23 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         for (int g = 0; g < this->group_; ++g) {
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
             int gchan = g * in_group_size * bottom_hw + cchan * bottom_hw;
-            for (int p = 0; p < this->kernel_h_; ++p) {
-              for (int q = 0; q < this->kernel_w_; ++q) {
-                for (int yunused = 0; yunused <= usable_height; yunused += this->stride_h_){
-                  for (int xunused = 0; xunused <= usable_width; xunused += this->stride_w_) {
-                    int gbase = gchan - this->pad_h_ * this->conv_in_width_
-                       + (p + yunused) * this->conv_in_width_;
-                    int belement = gbase + q - this->pad_w_ + xunused;
-                    for (int fdunused = 0; fdunused < out_group_size; ++fdunused) {
-                      if (gbase >= gchan && gbase < gchan + bottom_hw
-                        && belement >= gbase && belement < gbase + this->conv_in_width_) {
-                    int welement = g * this->weight_offset_ + cchan * kernel_hw
-                       + fdunused * in_group_size * kernel_hw
-                       + (p * this->kernel_w_) + q;
-                    Dtype chain_grad = top_diff_bp[g * this->output_offset_
-                       + fdunused * this->conv_out_spatial_dim_
-                       + (yunused / this->stride_h_) * (usable_width / this->stride_w_ + 1)
-                       + (xunused / this->stride_w_)
-                       ];
+            for (int fdunused = 0; fdunused < out_group_size; ++fdunused) {
+              for (int yunused = 0; yunused <= usable_height; yunused += this->stride_h_){
+                for (int xunused = 0; xunused <= usable_width; xunused += this->stride_w_) {
+                  Dtype chain_grad = top_diff_bp[g * this->output_offset_
+                     + fdunused * this->conv_out_spatial_dim_
+                     + (yunused / this->stride_h_) * (usable_width / this->stride_w_ + 1)
+                     + (xunused / this->stride_w_)
+                     ];
+                  for (int p = 0; p < this->kernel_h_; ++p) {
+                    int gbase = gchan - this->pad_h_ * this->conv_in_width_ + (p + yunused) * this->conv_in_width_;
+                    if (gbase >= gchan && gbase < gchan + bottom_hw)
+                    for (int q = 0; q < this->kernel_w_; ++q) {
+                      int belement = gbase + q - this->pad_w_ + xunused;
+                      if (belement >= gbase && belement < gbase + this->conv_in_width_) {
+                        int welement = g * this->weight_offset_ + cchan * kernel_hw
+                           + fdunused * in_group_size * kernel_hw
+                           + (p * this->kernel_w_) + q;
                         // gradient w.r.t. weight. Note that we will accumulate diffs.
                         if (weight_diff)
                           weight_diff[welement] += bottom_bp[belement] * chain_grad;
