@@ -120,12 +120,12 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                 for (int x = 0; x <= usable_width; x += this->stride_w_) {
                   Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
                   for (int p = 0; p < this->kernel_h_; ++p) {
-                    int gbase = gchan - this->pad_h_ * this->conv_in_width_ + (p + y) * this->conv_in_width_;
-                    if (gbase >= gchan && gbase < gchan + bottom_hw)
                     for (int q = 0; q < this->kernel_w_; ++q) {
-                      int belement = gbase - this->pad_w_ + x + q;
-                      int welement = wchan + p * this->kernel_w_ + q;
-                      if (belement >= gbase && belement < gbase + this->conv_in_width_) {
+                      int poffset = y + p - this->pad_h_;
+                      int qoffset = x + q - this->pad_w_;
+                      if (poffset >= 0 && poffset < this->conv_in_height_ && qoffset >= 0 && qoffset < this->conv_in_width_) {
+                        int belement = gchan + poffset * this->conv_in_width_ + qoffset;
+                        int welement = wchan + p * this->kernel_w_ + q;
                         // gradient w.r.t. weight. Note that we will accumulate diffs.
                         if (weight_diff)
                           weight_diff[welement] += bottom_bp[belement] * chain_grad;
