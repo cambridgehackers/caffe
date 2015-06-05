@@ -104,8 +104,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       }
       if (propagate_down[i]) {
         bottom_diff_bp =  bottom[i]->mutable_cpu_diff() + boff;
-        // zero out gradient wrt bottom data, we're about to fill it
-        caffe_set(bottom_hw * this->conv_in_channels_, Dtype(0), bottom_diff_bp);
       }
       int usable_height = this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_;
       int usable_width = this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_;
@@ -113,12 +111,45 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         for (int g = 0; g < this->group_; ++g) {
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
             int gchan = (g * in_group_size + cchan) * bottom_hw;
+#if 1
+            for (int poffset = 0; poffset < this->conv_in_height_; ++poffset) {
+              for (int qoffset = 0; qoffset < this->conv_in_width_; ++qoffset) {
+                int belement = gchan + poffset * this->conv_in_width_ + qoffset;
+                Dtype temp = 0;
+                Dtype botval = bottom_bp[belement];
+                for (int outindex = 0; outindex < out_group_size; ++outindex) {
+                  int wchan = g * this->weight_offset_ + (cchan + outindex * in_group_size) * kernel_hw;
+                  const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
+#define MAX(A,B) (((A) > (B)) ? (A) : (B))
+                  for (int y = 0; y <= usable_height; y += this->stride_h_) {
+                    for (int x = 0; x <= usable_width; x += this->stride_w_) {
+                      int p = poffset - y + this->pad_h_;
+                      int q = qoffset - x + this->pad_w_;
+                      if (p >= 0 && p < this->kernel_h_ && q >= 0 && q < this->kernel_w_) {
+                        int welement = wchan + (p) * this->kernel_w_ + (q);
+                        Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
+                        // gradient w.r.t. weight. Note that we will accumulate diffs.
+                        if (weight_diff)
+                          weight_diff[welement] += botval * chain_grad;
+                        // gradient w.r.t. bottom data, if necessary.
+                        temp += weight[welement] * chain_grad;
+                      }
+                    }
+                  }
+                }
+                if (bottom_diff_bp)
+                  bottom_diff_bp[belement] = temp;
+              }
+            }
+#else
+            // zero out gradient wrt bottom data, we're about to fill it
+            if (bottom_diff_bp)
+              caffe_set(bottom_hw, Dtype(0), &bottom_diff_bp[gchan]);
             for (int outindex = 0; outindex < out_group_size; ++outindex) {
               int wchan = g * this->weight_offset_ + (cchan + outindex * in_group_size) * kernel_hw;
               const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
               for (int y = 0; y <= usable_height; y += this->stride_h_){
                 for (int x = 0; x <= usable_width; x += this->stride_w_) {
-                  Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
                   for (int p = 0; p < this->kernel_h_; ++p) {
                     for (int q = 0; q < this->kernel_w_; ++q) {
                       int poffset = y + p - this->pad_h_;
@@ -126,6 +157,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                       if (poffset >= 0 && poffset < this->conv_in_height_ && qoffset >= 0 && qoffset < this->conv_in_width_) {
                         int belement = gchan + poffset * this->conv_in_width_ + qoffset;
                         int welement = wchan + p * this->kernel_w_ + q;
+                        Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
                         // gradient w.r.t. weight. Note that we will accumulate diffs.
                         if (weight_diff)
                           weight_diff[welement] += bottom_bp[belement] * chain_grad;
@@ -138,6 +170,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                 }
               }
             }
+#endif
           }
         }
       }
