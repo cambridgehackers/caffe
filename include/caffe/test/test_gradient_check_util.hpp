@@ -169,6 +169,10 @@ void GradientChecker<Dtype>::CheckGradientSingle(Layer<Dtype>* layer,
           << "; feat = " << feature
           << "; objective+ = " << positive_objective
           << "; objective- = " << negative_objective;
+if (fabs(computed_gradient - estimated_gradient) > 0.1) {
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+exit(-1);
+}
       }
       // LOG(ERROR) << "Feature: " << current_blob->cpu_data()[feat_id];
       // LOG(ERROR) << "computed gradient: " << computed_gradient
