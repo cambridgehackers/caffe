@@ -80,6 +80,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
   int in_group_size = this->conv_in_channels_ / this->group_;
   int usable_height = this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_;
   int usable_width = this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_;
+  int total_in_kernel = in_group_size * kernel_hw;
   Dtype* weight_diff = NULL;
   Dtype* bias_diff = NULL;
   if (this->param_propagate_down_[0]) {
@@ -112,51 +113,50 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         for (int g = 0; g < this->group_; ++g) {
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
             int gchan = (g * in_group_size + cchan) * bottom_hw;
+            int wbase = g * this->weight_offset_ + cchan * kernel_hw;
 #if 1
             if (weight_diff)
             for (int outindex = 0; outindex < out_group_size; ++outindex) {
-              int wchan = g * this->weight_offset_ + (cchan + outindex * in_group_size) * kernel_hw;
+              int wchan = wbase + outindex * total_in_kernel;
               const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
               for (int y = 0; y <= usable_height; y += this->stride_h_){
                 for (int x = 0; x <= usable_width; x += this->stride_w_) {
                   Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
-                  for (int p = 0; p < this->kernel_h_; ++p) {
-                    for (int q = 0; q < this->kernel_w_; ++q) {
-                      int poffset = y + p - this->pad_h_;
 //__builtin_prefetch(&bottom_bp[gchan + poffset * this->conv_in_width_]);
-                      int qoffset = x + q - this->pad_w_;
-                      if (poffset >= 0 && poffset < this->conv_in_height_ && qoffset >= 0 && qoffset < this->conv_in_width_) {
-                        int belement = gchan + poffset * this->conv_in_width_ + qoffset;
-                        int welement = wchan + p * this->kernel_w_ + q;
-                        // gradient w.r.t. weight. Note that we will accumulate diffs.
-                        weight_diff[welement] += bottom_bp[belement] * chain_grad;
-                      }
+                  int p_start = MAX(0, this->pad_h_ - y);
+                  int q_start = MAX(0, this->pad_w_ - x);
+                  int p_limit = MIN(this->conv_in_height_ - y + this->pad_h_, this->kernel_h_ - 1);
+                  int q_limit = MIN(this->conv_in_width_ - x + this->pad_w_, this->kernel_w_ - 1);
+                  int bebase = gchan + (y - this->pad_h_) * this->conv_in_width_ + (x - this->pad_w_);
+                  for (int p = p_start; p <= p_limit; ++p) {
+                    for (int q = q_start; q <= q_limit; ++q) {
+                      int belement = bebase + p * this->conv_in_width_ + q;
+                      int welement = wchan + p * this->kernel_w_ + q;
+                      // gradient w.r.t. weight. Note that we will accumulate diffs.
+                      weight_diff[welement] += bottom_bp[belement] * chain_grad;
                     }
                   }
                 }
               }
             }
             if (bottom_diff_bp)
-            for (int poffset = 0; poffset < this->conv_in_height_; ++poffset) {
-              for (int qoffset = 0; qoffset < this->conv_in_width_; ++qoffset) {
+            for (int poffset = this->pad_h_; poffset < this->conv_in_height_ + this->pad_h_; ++poffset) {
+              for (int qoffset = this->pad_w_; qoffset < this->conv_in_width_ + this->pad_w_; ++qoffset) {
                 int belement = gchan + poffset * this->conv_in_width_ + qoffset;
                 Dtype temp = 0;
-                int y_limit = MIN(usable_height, poffset + this->pad_h_);
-                int x_limit = MIN(usable_width, qoffset + this->pad_w_);
+                int y_start = MAX(0, (poffset - this->kernel_h_ + this->stride_h_) / this->stride_h_);
+                int x_start = MAX(0, (qoffset - this->kernel_w_ + this->stride_w_) / this->stride_w_);
+                int y_limit = MIN(usable_height, poffset)/ this->stride_h_;
+                int x_limit = MIN(usable_width, qoffset) / this->stride_w_;
                 for (int outindex = 0; outindex < out_group_size; ++outindex) {
-                  int wchan = g * this->weight_offset_ + (cchan + outindex * in_group_size) * kernel_hw;
+                  int wchan = wbase + outindex * total_in_kernel;
                   const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
-                  for (int y = 0; y <= y_limit; y += this->stride_h_) {
-                    for (int x = 0; x <= x_limit; x += this->stride_w_) {
-                      Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
-                      int p = poffset - y + this->pad_h_;
-//__builtin_prefetch(&weight[wchan + p * this->kernel_w_]);
-                      int q = qoffset - x + this->pad_w_;
-                      if (p < this->kernel_h_ && q < this->kernel_w_) {
-                        int welement = wchan + (p) * this->kernel_w_ + (q);
-                        // gradient w.r.t. bottom data, if necessary.
-                        temp += weight[welement] * chain_grad;
-                      }
+                  for (int y = y_start; y <= y_limit; y++) {
+                    for (int x = x_start; x <= x_limit; x++) {
+                      int welement = wchan + (poffset - y * this->stride_h_)
+                         * this->kernel_w_ + (qoffset - x * this->stride_w_);
+                      // gradient w.r.t. bottom data, if necessary.
+                      temp += weight[welement] * topdptr[y * (usable_width / this->stride_w_ + 1) + x];
                     }
                   }
                 }
