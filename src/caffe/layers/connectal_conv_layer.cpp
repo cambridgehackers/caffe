@@ -1,13 +1,39 @@
 #include "caffe/filler.hpp"
 #include "caffe/layer.hpp"
 #include "caffe/vision_layers.hpp"
+#include "papi.h"
 #define MIN(A,B) (((A) < (B)) ? (A) : (B))
 #define MAX(A,B) (((A) > (B)) ? (A) : (B))
+
+#define NUM_EVENTS 4
+static void jcapinit(void)
+{
+  static int once = 1;
+  int event[NUM_EVENTS] = {PAPI_TOT_INS, PAPI_TOT_CYC, PAPI_BR_MSP, PAPI_L1_DCM };
+  if (once) {
+    once = 0;
+    /* Start counting events */
+    if (PAPI_start_counters(event, NUM_EVENTS) != PAPI_OK) {
+        fprintf(stderr, "PAPI_start_counters - FAILED\n");
+        exit(1);
+    }
+  }
+}
+static void jcaperf(long long *perfvalues, const char *name)
+{
+    printf("%s: Total instructions: %6lld;", name, perfvalues[0]);
+    printf("Total cycles: %6lld;", perfvalues[1]);
+    printf("Instr per cycle: %2.3f;", (double)perfvalues[0] / (double) perfvalues[1]);
+    printf("Branches mispredicted: %6lld;", perfvalues[2]);
+    printf("L1 Cache misses: %6lld\n", perfvalues[3]);
+}
 namespace caffe {
 template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top)
 {
+  jcapinit();
+  long long perfvalues1[NUM_EVENTS];
   const Dtype* weight = this->blobs_[0]->cpu_data();
   int bottom_hw = this->conv_in_height_ * this->conv_in_width_;
   int kernel_hw = this->kernel_h_ * this->kernel_w_;
@@ -30,6 +56,10 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
         for (int ounused = 0; ounused < out_group_size; ounused++) {
           const Dtype *bpg = bottom_data;
           const Dtype bias_val = bias ? *biasptr++ : 0;
+    if (PAPI_read_counters(perfvalues1, NUM_EVENTS) != PAPI_OK) {
+        fprintf(stderr, "PAPI_read_counters - FAILED\n");
+        exit(1);
+    }
           // Scan over source 2D input data
           for (int y = 0; y < this->height_out_; y++) {
             int p_limit = MIN(this->kernel_h_ - this->pad_h_,
@@ -61,18 +91,32 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
             bpg += this->conv_in_width_ * this->stride_h_;
           }
           wp_base += in_group_size * kernel_hw;
+    if (PAPI_read_counters(perfvalues1, NUM_EVENTS) != PAPI_OK) {
+        fprintf(stderr, "PAPI_read_counters - FAILED\n");
+        exit(1);
+    }
         }
         bottom_data += in_group_size * bottom_hw;
         top_data += this->output_offset_;
       }
     }
   }
+static int jcacount = 0;
+if (jcacount++ > 300) {
+if (jcacount < 310) {
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+jcaperf(perfvalues1, "forward");
+}
+}
 }
 
 template <typename Dtype>
 void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 {
+  jcapinit();
+  long long perfvalues1[NUM_EVENTS];
+  long long perfvalues2[NUM_EVENTS];
   const Dtype* weight = this->blobs_[0]->cpu_data();
   int bottom_hw = this->conv_in_height_ * this->conv_in_width_;
   int kernel_hw = this->kernel_h_ * this->kernel_w_;
@@ -81,6 +125,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
   int usable_height = this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_;
   int usable_width = this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_;
   int total_in_kernel = in_group_size * kernel_hw;
+  int stride_kernel = this->stride_h_ * this->kernel_w_;
   Dtype* weight_diff = NULL;
   Dtype* bias_diff = NULL;
   if (this->param_propagate_down_[0]) {
@@ -119,25 +164,34 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
             for (int outindex = 0; outindex < out_group_size; ++outindex) {
               int wchan = wbase + outindex * total_in_kernel;
               const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
+    if (PAPI_read_counters(perfvalues1, NUM_EVENTS) != PAPI_OK) {
+        fprintf(stderr, "PAPI_read_counters - FAILED\n");
+        exit(1);
+    }
               for (int y = 0; y <= usable_height; y += this->stride_h_){
                 for (int x = 0; x <= usable_width; x += this->stride_w_) {
                   Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
-//__builtin_prefetch(&bottom_bp[gchan + poffset * this->conv_in_width_]);
                   int p_start = MAX(0, this->pad_h_ - y);
                   int q_start = MAX(0, this->pad_w_ - x);
                   int p_limit = MIN(this->conv_in_height_ - y + this->pad_h_, this->kernel_h_ - 1);
                   int q_limit = MIN(this->conv_in_width_ - x + this->pad_w_, this->kernel_w_ - 1);
                   int bebase = gchan + (y - this->pad_h_) * this->conv_in_width_ + (x - this->pad_w_);
+//__builtin_prefetch(&bottom_bp[bebase + p_start * this->conv_in_width_]);
+//__builtin_prefetch(&weight_diff[wchan + p_start * this->kernel_w_]);
                   for (int p = p_start; p <= p_limit; ++p) {
+                    int belement = bebase + p * this->conv_in_width_;
+                    int welement = wchan + p * this->kernel_w_;
                     for (int q = q_start; q <= q_limit; ++q) {
-                      int belement = bebase + p * this->conv_in_width_ + q;
-                      int welement = wchan + p * this->kernel_w_ + q;
                       // gradient w.r.t. weight. Note that we will accumulate diffs.
-                      weight_diff[welement] += bottom_bp[belement] * chain_grad;
+                      weight_diff[welement + q] += bottom_bp[belement + q] * chain_grad;
                     }
                   }
                 }
               }
+    if (PAPI_read_counters(perfvalues1, NUM_EVENTS) != PAPI_OK) {
+        fprintf(stderr, "PAPI_read_counters - FAILED\n");
+        exit(1);
+    }
             }
             if (bottom_diff_bp)
             for (int poffset = this->pad_h_; poffset < this->conv_in_height_ + this->pad_h_; ++poffset) {
@@ -149,20 +203,30 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                 int y_limit = MIN(usable_height, poffset)/ this->stride_h_;
                 int x_limit = MIN(usable_width, qoffset) / this->stride_w_;
                 for (int outindex = 0; outindex < out_group_size; ++outindex) {
-                  int wchan = wbase + outindex * total_in_kernel;
+                  int wchan = wbase + outindex * total_in_kernel + poffset * this->kernel_w_ + qoffset;
                   const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
                   for (int y = y_start; y <= y_limit; y++) {
                     for (int x = x_start; x <= x_limit; x++) {
-                      int welement = wchan + (poffset - y * this->stride_h_)
-                         * this->kernel_w_ + (qoffset - x * this->stride_w_);
+                      int welement = wchan - y * stride_kernel - x * this->stride_w_;
                       // gradient w.r.t. bottom data, if necessary.
                       temp += weight[welement] * topdptr[y * (usable_width / this->stride_w_ + 1) + x];
                     }
                   }
                 }
                 bottom_diff_bp[belement] = temp;
+    if (PAPI_read_counters(perfvalues2, NUM_EVENTS) != PAPI_OK) {
+        fprintf(stderr, "PAPI_read_counters - FAILED\n");
+        exit(1);
+    }
               }
             }
+static int jcacount = 0;
+if (jcacount++ > 300) {
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+jcaperf(perfvalues1, "first ");
+jcaperf(perfvalues2, "second");
+exit(-1);
+}
 #else
             // zero out gradient wrt bottom data, we're about to fill it
             if (bottom_diff_bp)
