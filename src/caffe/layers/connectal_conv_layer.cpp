@@ -108,11 +108,6 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
       }
     }
   }
-#ifdef PERFSTAT
-static int jcacount = 0;
-if (jcacount++ > 300 && jcacount < 310)
-    perfperf(perfvalues1, "forward");
-#endif
 }
 
 template <typename Dtype>
@@ -164,7 +159,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
             int gchan = (g * in_group_size + cchan) * bottom_hw;
             int wbase = g * this->weight_offset_ + cchan * kernel_hw;
-#if 1
             if (weight_diff)
             for (int outindex = 0; outindex < out_group_size; ++outindex) {
               int wchan = wbase + outindex * total_in_kernel;
@@ -177,8 +171,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                   int p_limit = MIN(this->conv_in_height_ - y + this->pad_h_, this->kernel_h_ - 1);
                   int q_limit = MIN(this->conv_in_width_ - x + this->pad_w_, this->kernel_w_ - 1);
                   int bebase = gchan + (y - this->pad_h_) * this->conv_in_width_ + (x - this->pad_w_);
-//__builtin_prefetch(&bottom_bp[bebase + p_start * this->conv_in_width_]);
-//__builtin_prefetch(&weight_diff[wchan + p_start * this->kernel_w_]);
                   for (int p = p_start; p <= p_limit; ++p) {
                     int belement = bebase + p * this->conv_in_width_;
                     int welement = wchan + p * this->kernel_w_;
@@ -207,8 +199,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                   for (int y = y_start; y <= y_limit; y++) {
                     const Dtype *welement = &weight[wchan - y * stride_kernel - x_start * temp_stride_w];
                     const Dtype *telement = &topdptr[y * (usable_width / temp_stride_w + 1) + x_start];
-//__builtin_prefetch(welement - x_limit * temp_stride_w);
-//__builtin_prefetch(telement);
                     for (int x = 0; x <= x_limit; x++) {
                       // gradient w.r.t. bottom data, if necessary.
                       temp += *welement * *telement++;
@@ -220,44 +210,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
                 perfread(perfvalues2);
               }
             }
-#ifdef PERFSTAT
-static int jcacount = 0;
-if (jcacount++ > 300) {
-    perfperf(perfvalues1, "first ");
-    perfperf(perfvalues2, "second");
-    exit(-1);
-}
-#endif
-#else
-            // zero out gradient wrt bottom data, we're about to fill it
-            if (bottom_diff_bp)
-              caffe_set(bottom_hw, Dtype(0), &bottom_diff_bp[gchan]);
-            for (int outindex = 0; outindex < out_group_size; ++outindex) {
-              int wchan = g * this->weight_offset_ + (cchan + outindex * in_group_size) * kernel_hw;
-              const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
-              for (int y = 0; y <= usable_height; y += this->stride_h_){
-                for (int x = 0; x <= usable_width; x += this->stride_w_) {
-                  for (int p = 0; p < this->kernel_h_; ++p) {
-                    for (int q = 0; q < this->kernel_w_; ++q) {
-                      int poffset = y + p - this->pad_h_;
-                      int qoffset = x + q - this->pad_w_;
-                      if (poffset >= 0 && poffset < this->conv_in_height_ && qoffset >= 0 && qoffset < this->conv_in_width_) {
-                        int belement = gchan + poffset * this->conv_in_width_ + qoffset;
-                        int welement = wchan + p * this->kernel_w_ + q;
-                        Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
-                        // gradient w.r.t. weight. Note that we will accumulate diffs.
-                        if (weight_diff)
-                          weight_diff[welement] += bottom_bp[belement] * chain_grad;
-                        // gradient w.r.t. bottom data, if necessary.
-                        if (bottom_diff_bp)
-                          bottom_diff_bp[belement] += weight[welement] * chain_grad;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-#endif
           }
         }
       }
