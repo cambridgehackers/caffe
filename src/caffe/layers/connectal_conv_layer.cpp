@@ -108,6 +108,11 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
       }
     }
   }
+#ifdef PERFSTAT
+  static int jcacount = 0;
+  if (jcacount++ > 300 && jcacount < 310)
+    perfperf(perfvalues1, "forward");
+#endif
 }
 
 template <typename Dtype>
@@ -115,7 +120,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 {
   perfpinit();
-  long long perfvalues1[NUM_EVENTS];
   long long perfvalues2[NUM_EVENTS];
   const Dtype* weight = this->blobs_[0]->cpu_data();
   int bottom_hw = this->conv_in_height_ * this->conv_in_width_;
@@ -124,8 +128,6 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
   int in_group_size = this->conv_in_channels_ / this->group_;
   int usable_height = this->conv_in_height_ + 2 * this->pad_h_ - this->kernel_h_;
   int usable_width = this->conv_in_width_ + 2 * this->pad_w_ - this->kernel_w_;
-  int total_in_kernel = in_group_size * kernel_hw;
-  int stride_kernel = this->stride_h_ * this->kernel_w_;
   Dtype* weight_diff = NULL;
   Dtype* bias_diff = NULL;
   if (this->param_propagate_down_[0]) {
@@ -158,58 +160,46 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
         for (int g = 0; g < this->group_; ++g) {
           for (int cchan = 0; cchan < in_group_size; ++cchan) {
             int gchan = (g * in_group_size + cchan) * bottom_hw;
-            int wbase = g * this->weight_offset_ + cchan * kernel_hw;
-            if (weight_diff)
+            // zero out gradient wrt bottom data, we're about to fill it
+            if (bottom_diff_bp)
+              caffe_set(bottom_hw, Dtype(0), &bottom_diff_bp[gchan]);
             for (int outindex = 0; outindex < out_group_size; ++outindex) {
-              int wchan = wbase + outindex * total_in_kernel;
+              int wchan = g * this->weight_offset_ + (cchan + outindex * in_group_size) * kernel_hw;
               const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
               for (int y = 0; y <= usable_height; y += this->stride_h_){
                 for (int x = 0; x <= usable_width; x += this->stride_w_) {
                   Dtype chain_grad = topdptr[(y * (usable_width + this->stride_w_) / this->stride_h_ + x) / this->stride_w_ ];
-                  int p_start = MAX(0, this->pad_h_ - y);
-                  int q_start = MAX(0, this->pad_w_ - x);
-                  int p_limit = MIN(this->conv_in_height_ - y + this->pad_h_, this->kernel_h_ - 1);
-                  int q_limit = MIN(this->conv_in_width_ - x + this->pad_w_, this->kernel_w_ - 1);
-                  int bebase = gchan + (y - this->pad_h_) * this->conv_in_width_ + (x - this->pad_w_);
-                  for (int p = p_start; p <= p_limit; ++p) {
-                    int belement = bebase + p * this->conv_in_width_;
-                    int welement = wchan + p * this->kernel_w_;
-                    for (int q = q_start; q <= q_limit; ++q) {
+                  int pad_y = this->pad_h_ - y;
+                  int pad_x = this->pad_w_ - x;
+                  int p_start = MAX(0, pad_y);
+                  int p_limit = MIN(this->kernel_h_, this->conv_in_height_ + pad_y);
+                  int q_start = MAX(0, pad_x);
+                  int q_limit = MIN(this->kernel_w_, this->conv_in_width_ + pad_x);
+                  int bbase = gchan - pad_y * this->conv_in_width_ - pad_x;
+                  if (chain_grad != 0.0)
+                  for (int p = p_start; p < p_limit; ++p) {
+                    for (int q = q_start; q < q_limit; ++q) {
+                      int belement = bbase + p * this->conv_in_width_ + q;
+                      int welement = wchan + p * this->kernel_w_ + q;
                       // gradient w.r.t. weight. Note that we will accumulate diffs.
-                      weight_diff[welement + q] += bottom_bp[belement + q] * chain_grad;
-                    }
-                  }
-                }
-                perfread(perfvalues1);
-              }
-            }
-            int temp_stride_w = this->stride_w_;
-            if (bottom_diff_bp)
-            for (int poffset = this->pad_h_; poffset < this->conv_in_height_ + this->pad_h_; ++poffset) {
-              for (int qoffset = this->pad_w_; qoffset < this->conv_in_width_ + this->pad_w_; ++qoffset) {
-                int belement = gchan + poffset * this->conv_in_width_ + qoffset;
-                Dtype temp = 0;
-                int y_start = MAX(0, (poffset - this->kernel_h_ + this->stride_h_) / this->stride_h_);
-                int x_start = MAX(0, (qoffset - this->kernel_w_ + temp_stride_w) / temp_stride_w);
-                int y_limit = MIN(usable_height, poffset)/ this->stride_h_;
-                int x_limit = MIN(usable_width, qoffset) / temp_stride_w - x_start;
-                for (int outindex = 0; outindex < out_group_size; ++outindex) {
-                  int wchan = wbase + outindex * total_in_kernel + poffset * this->kernel_w_ + qoffset;
-                  const Dtype *topdptr = &top_diff_bp[g * this->output_offset_ + outindex * this->conv_out_spatial_dim_];
-                  for (int y = y_start; y <= y_limit; y++) {
-                    const Dtype *welement = &weight[wchan - y * stride_kernel - x_start * temp_stride_w];
-                    const Dtype *telement = &topdptr[y * (usable_width / temp_stride_w + 1) + x_start];
-                    for (int x = 0; x <= x_limit; x++) {
+                      if (weight_diff)
+                        weight_diff[welement] += bottom_bp[belement] * chain_grad;
                       // gradient w.r.t. bottom data, if necessary.
-                      temp += *welement * *telement++;
-                      welement -= temp_stride_w;
+                      if (bottom_diff_bp)
+                        bottom_diff_bp[belement] += weight[welement] * chain_grad;
                     }
                   }
                 }
-                bottom_diff_bp[belement] = temp;
-                perfread(perfvalues2);
               }
+              perfread(perfvalues2);
             }
+#ifdef PERFSTAT
+            static int jcacount = 0;
+            if (jcacount++ > 300) {
+                perfperf(perfvalues2, "second");
+                exit(-1);
+            }
+#endif
           }
         }
       }
