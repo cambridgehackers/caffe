@@ -58,6 +58,7 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   void backward_gpu_bias(Dtype* bias, const Dtype* input);
 #endif
 
+public: //jca
   // reverse_dimensions should return true iff we are implementing deconv, so
   // that conv helpers know which dimensions are which.
   virtual bool reverse_dimensions() = 0;
@@ -265,7 +266,8 @@ template <typename Dtype>
 class ConnectalConvolutionLayer : public ConvolutionLayer<Dtype> {
  public:
   explicit ConnectalConvolutionLayer(const LayerParameter& param)
-      : ConvolutionLayer<Dtype>(param) {};
+      : ConvolutionLayer<Dtype>(param), paramPtr(NULL) {};
+  void *paramPtr;
 
  protected:
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
