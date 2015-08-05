@@ -56,7 +56,6 @@ template <typename Dtype>
         return param;
     }
     param = static_cast<ParamType<Dtype> *>(init_connectal_conv_library(sizeof(Dtype)));
-printf("[%s:%d] param %p\n", __FUNCTION__, __LINE__, param);
     base->paramPtr = param;
     param->weight = base->blobs_[0]->cpu_data();
     param->top_size = top.size();
@@ -110,10 +109,10 @@ template <typename Dtype>
 {
     ParamType<Dtype> *param = forward_init<Dtype>(base, bottom, top);
     if (!param->propagate_down) {
-printf("[%s:%d]\n", __FUNCTION__, __LINE__);
-        param->propagate_down = new bool[propagate_down.size()];
+        bool *p = new bool[propagate_down.size()];
         for (int i = 0; i < propagate_down.size(); i++)
-            param->propagate_down[i] = propagate_down[i];
+            p[i] = propagate_down[i];
+        param->propagate_down = p;
     }
     else {
         for (int i = 0; i < propagate_down.size(); i++)
