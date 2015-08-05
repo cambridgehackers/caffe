@@ -55,10 +55,9 @@ template <typename Dtype>
         CASSERT(param->stride_w_ == base->stride_w_);
         return param;
     }
-    param = new ParamType<Dtype>;
+    param = static_cast<ParamType<Dtype> *>(init_connectal_conv_library(sizeof(Dtype)));
 printf("[%s:%d] param %p\n", __FUNCTION__, __LINE__, param);
     base->paramPtr = param;
-    memset(param, 0, sizeof(*param));
     param->weight = base->blobs_[0]->cpu_data();
     param->top_size = top.size();
     param->bottom_size = bottom.size();
@@ -129,7 +128,6 @@ void ConnectalConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& b
       const vector<Blob<Dtype>*>& top)
 {
   forward_init(this, bottom, top);
-  //forward_process<Dtype>(this->paramPtr);
   static_cast<ParamType<Dtype> *>(this->paramPtr)->forward_process();
 }
 
