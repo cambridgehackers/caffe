@@ -53,6 +53,13 @@ template <typename Dtype>
         CASSERT(param->pad_w_ == base->pad_w_);
         CASSERT(param->stride_h_ == base->stride_h_);
         CASSERT(param->stride_w_ == base->stride_w_);
+        // legacy
+        CASSERT(param->col_buffer_ == base->col_buffer_.mutable_cpu_data());
+        CASSERT(param->is_1x1_ == base->is_1x1_);
+        CASSERT(param->bottom_mult == bottom[0]->offset(1));
+        CASSERT(param->top_mult == top[0]->offset(1));
+        CASSERT(param->param_propagate_down_[0] == base->param_propagate_down_[0]);
+        CASSERT(param->param_propagate_down_[1] == base->param_propagate_down_[1]);
         return param;
     }
     param = static_cast<ParamType<Dtype> *>(init_connectal_conv_library(sizeof(Dtype)));
@@ -105,6 +112,7 @@ template <typename Dtype>
     param->top_mult = top[0]->offset(1);
     param->param_propagate_down_[0] = base->param_propagate_down_[0];
     param->param_propagate_down_[1] = base->param_propagate_down_[1];
+    param->col_offset_ = base->col_offset_;
     return param;
 }
 
