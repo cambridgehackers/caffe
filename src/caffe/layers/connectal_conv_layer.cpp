@@ -12,8 +12,8 @@ template <typename Dtype>
              const vector<Blob<Dtype>*>& bottom,
              const vector<Blob<Dtype>*>& top)
 {
-    typedef Dtype *dptr;
-    typedef const Dtype *cdptr;
+    typedef CPtr dptr;
+    typedef CPtr cdptr;
     ParamType<Dtype> *param = static_cast<ParamType<Dtype> *>(base->paramPtr);
     if (param) {
         return param;
@@ -53,8 +53,8 @@ template <typename Dtype>
     param->col_offset_ = base->col_offset_;
 
     // memory
-    size_t len = 0;
-#define ROUNDLEN(A) (((((A)->size() + sizeof(double) - 1)/sizeof(double)) * sizeof(double))/sizeof(Dtype))
+    size_t len = 0, currentIndex = 0;
+#define ROUNDLEN(A) ((((A)->size() + sizeof(double) - 1)/sizeof(double)) * sizeof(double))
     len += ROUNDLEN(base->blobs_[0]->data());
     len += ROUNDLEN(base->blobs_[0]->diff());
     for (int i = 0; i < param->bottom_size; i++) {
@@ -71,13 +71,14 @@ template <typename Dtype>
         len += ROUNDLEN(base->bias_multiplier_.data());
     }
     //
-    Dtype *baseptr = (Dtype *)//malloc(len * sizeof(Dtype));
-        alloc_portalMem(len * sizeof(Dtype), 1/*cached*/, &param->portalFd_);
+    len++;
+    param->basePtr = (uint8_t *)alloc_portal_memory(len * sizeof(Dtype), 1/*cached*/, &param->portalFd_);
+    currentIndex += sizeof(Dtype);
 printf("[%s:%d] len %ld\n", __FUNCTION__, __LINE__, (long)len);
 #define PTRINC(TARGET, A) { \
-        (A)->set_cpu_data(baseptr); \
-        TARGET = baseptr;\
-        baseptr += ROUNDLEN(A); \
+        (A)->set_cpu_data(CACCESS(currentIndex)); \
+        TARGET = currentIndex;\
+        currentIndex += ROUNDLEN(A); \
         }
     PTRINC(param->weight, base->blobs_[0]->data());
     PTRINC(param->weight_diff, base->blobs_[0]->diff());
@@ -114,7 +115,7 @@ void ConnectalConvolutionLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& 
       param->propdone_ = 1;
       for (int i = 0; i < param->bottom_size; i++) {
           if (!propagate_down[i])
-              param->bottom_diff[i] = NULL;
+              param->bottom_diff[i] = 0;
       }
   }
   param->backward_process();
