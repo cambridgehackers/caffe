@@ -3,7 +3,7 @@
 
 #include "caffe/blob.hpp"
 #include "caffe/common.hpp"
-#include "caffe/syncedmem.hpp"
+//#include "caffe/syncedmem.hpp"
 #include "caffe/util/math_functions.hpp"
 
 namespace caffe {
@@ -32,8 +32,8 @@ void Blob<Dtype>::Reshape(const vector<int>& shape) {
   }
   if (count_ > capacity_) {
     capacity_ = count_;
-    data_.reset(new SyncedMemory(capacity_ * sizeof(Dtype)));
-    diff_.reset(new SyncedMemory(capacity_ * sizeof(Dtype)));
+    data_.reset(new ConnectalMemory(capacity_ * sizeof(Dtype)));
+    diff_.reset(new ConnectalMemory(capacity_ * sizeof(Dtype)));
   }
 }
 
@@ -143,14 +143,14 @@ template <typename Dtype>
 void Blob<Dtype>::Update() {
   // We will perform update based on where the data is located.
   switch (data_->head()) {
-  case SyncedMemory::HEAD_AT_CPU:
+  case ConnectalMemory::HEAD_AT_CPU:
     // perform computation on CPU
     caffe_axpy<Dtype>(count_, Dtype(-1),
         static_cast<const Dtype*>(diff_->cpu_data()),
         static_cast<Dtype*>(data_->mutable_cpu_data()));
     break;
-  case SyncedMemory::HEAD_AT_GPU:
-  case SyncedMemory::SYNCED:
+  //case SyncedMemory::HEAD_AT_GPU:
+  case ConnectalMemory::SYNCED:
 #ifndef CPU_ONLY
     // perform computation on GPU
     caffe_gpu_axpy<Dtype>(count_, Dtype(-1),
@@ -179,10 +179,10 @@ template <typename Dtype>
 Dtype Blob<Dtype>::asum_data() const {
   if (!data_) { return 0; }
   switch (data_->head()) {
-  case SyncedMemory::HEAD_AT_CPU:
+  case ConnectalMemory::HEAD_AT_CPU:
     return caffe_cpu_asum(count_, cpu_data());
-  case SyncedMemory::HEAD_AT_GPU:
-  case SyncedMemory::SYNCED:
+  //case SyncedMemory::HEAD_AT_GPU:
+  case ConnectalMemory::SYNCED:
 #ifndef CPU_ONLY
   {
     Dtype asum;
@@ -192,7 +192,7 @@ Dtype Blob<Dtype>::asum_data() const {
 #else
     NO_GPU;
 #endif
-  case SyncedMemory::UNINITIALIZED:
+  case ConnectalMemory::UNINITIALIZED:
     return 0;
   default:
     LOG(FATAL) << "Unknown SyncedMemory head state: " << data_->head();
@@ -214,10 +214,10 @@ template <typename Dtype>
 Dtype Blob<Dtype>::asum_diff() const {
   if (!diff_) { return 0; }
   switch (diff_->head()) {
-  case SyncedMemory::HEAD_AT_CPU:
+  case ConnectalMemory::HEAD_AT_CPU:
     return caffe_cpu_asum(count_, cpu_diff());
-  case SyncedMemory::HEAD_AT_GPU:
-  case SyncedMemory::SYNCED:
+  //case SyncedMemory::HEAD_AT_GPU:
+  case ConnectalMemory::SYNCED:
 #ifndef CPU_ONLY
   {
     Dtype asum;
@@ -227,7 +227,7 @@ Dtype Blob<Dtype>::asum_diff() const {
 #else
     NO_GPU;
 #endif
-  case SyncedMemory::UNINITIALIZED:
+  case ConnectalMemory::UNINITIALIZED:
     return 0;
   default:
     LOG(FATAL) << "Unknown SyncedMemory head state: " << diff_->head();
@@ -251,12 +251,12 @@ Dtype Blob<Dtype>::sumsq_data() const {
   const Dtype* data;
   if (!data_) { return 0; }
   switch (data_->head()) {
-  case SyncedMemory::HEAD_AT_CPU:
+  case ConnectalMemory::HEAD_AT_CPU:
     data = cpu_data();
     sumsq = caffe_cpu_dot(count_, data, data);
     break;
-  case SyncedMemory::HEAD_AT_GPU:
-  case SyncedMemory::SYNCED:
+  //case SyncedMemory::HEAD_AT_GPU:
+  case ConnectalMemory::SYNCED:
 #ifndef CPU_ONLY
     data = gpu_data();
     caffe_gpu_dot(count_, data, data, &sumsq);
@@ -264,7 +264,7 @@ Dtype Blob<Dtype>::sumsq_data() const {
     NO_GPU;
 #endif
     break;
-  case SyncedMemory::UNINITIALIZED:
+  case ConnectalMemory::UNINITIALIZED:
     return 0;
   default:
     LOG(FATAL) << "Unknown SyncedMemory head state: " << data_->head();
@@ -288,12 +288,12 @@ Dtype Blob<Dtype>::sumsq_diff() const {
   const Dtype* diff;
   if (!diff_) { return 0; }
   switch (diff_->head()) {
-  case SyncedMemory::HEAD_AT_CPU:
+  case ConnectalMemory::HEAD_AT_CPU:
     diff = cpu_diff();
     sumsq = caffe_cpu_dot(count_, diff, diff);
     break;
-  case SyncedMemory::HEAD_AT_GPU:
-  case SyncedMemory::SYNCED:
+  //case SyncedMemory::HEAD_AT_GPU:
+  case ConnectalMemory::SYNCED:
 #ifndef CPU_ONLY
     diff = gpu_diff();
     caffe_gpu_dot(count_, diff, diff, &sumsq);
@@ -301,7 +301,7 @@ Dtype Blob<Dtype>::sumsq_diff() const {
 #else
     NO_GPU;
 #endif
-  case SyncedMemory::UNINITIALIZED:
+  case ConnectalMemory::UNINITIALIZED:
     return 0;
   default:
     LOG(FATAL) << "Unknown SyncedMemory head state: " << data_->head();
@@ -322,12 +322,12 @@ void Blob<Dtype>::scale_data(Dtype scale_factor) {
   Dtype* data;
   if (!data_) { return; }
   switch (data_->head()) {
-  case SyncedMemory::HEAD_AT_CPU:
+  case ConnectalMemory::HEAD_AT_CPU:
     data = mutable_cpu_data();
     caffe_scal(count_, scale_factor, data);
     return;
-  case SyncedMemory::HEAD_AT_GPU:
-  case SyncedMemory::SYNCED:
+  //case SyncedMemory::HEAD_AT_GPU:
+  case ConnectalMemory::SYNCED:
 #ifndef CPU_ONLY
     data = mutable_gpu_data();
     caffe_gpu_scal(count_, scale_factor, data);
@@ -335,7 +335,7 @@ void Blob<Dtype>::scale_data(Dtype scale_factor) {
 #else
     NO_GPU;
 #endif
-  case SyncedMemory::UNINITIALIZED:
+  case ConnectalMemory::UNINITIALIZED:
     return;
   default:
     LOG(FATAL) << "Unknown SyncedMemory head state: " << data_->head();
@@ -355,12 +355,12 @@ void Blob<Dtype>::scale_diff(Dtype scale_factor) {
   Dtype* diff;
   if (!diff_) { return; }
   switch (diff_->head()) {
-  case SyncedMemory::HEAD_AT_CPU:
+  case ConnectalMemory::HEAD_AT_CPU:
     diff = mutable_cpu_diff();
     caffe_scal(count_, scale_factor, diff);
     return;
-  case SyncedMemory::HEAD_AT_GPU:
-  case SyncedMemory::SYNCED:
+  //case SyncedMemory::HEAD_AT_GPU:
+  case ConnectalMemory::SYNCED:
 #ifndef CPU_ONLY
     diff = mutable_gpu_diff();
     caffe_gpu_scal(count_, scale_factor, diff);
@@ -368,7 +368,7 @@ void Blob<Dtype>::scale_diff(Dtype scale_factor) {
 #else
     NO_GPU;
 #endif
-  case SyncedMemory::UNINITIALIZED:
+  case ConnectalMemory::UNINITIALIZED:
     return;
   default:
     LOG(FATAL) << "Unknown SyncedMemory head state: " << diff_->head();

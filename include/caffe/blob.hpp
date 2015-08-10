@@ -7,7 +7,8 @@
 
 #include "caffe/common.hpp"
 #include "caffe/proto/caffe.pb.h"
-#include "caffe/syncedmem.hpp"
+#include "connectal_conv.h"
+//#include "caffe/syncedmem.hpp"
 #include "caffe/util/math_functions.hpp"
 
 const int kMaxBlobAxes = INT_MAX;
@@ -207,12 +208,12 @@ class Blob {
     return cpu_diff()[offset(index)];
   }
 
-  inline const shared_ptr<SyncedMemory>& data() const {
+  inline const shared_ptr<ConnectalMemory>& data() const {
     CHECK(data_);
     return data_;
   }
 
-  inline const shared_ptr<SyncedMemory>& diff() const {
+  inline const shared_ptr<ConnectalMemory>& diff() const {
     CHECK(diff_);
     return diff_;
   }
@@ -266,8 +267,8 @@ class Blob {
   bool ShapeEquals(const BlobProto& other);
 
  protected:
-  shared_ptr<SyncedMemory> data_;
-  shared_ptr<SyncedMemory> diff_;
+  shared_ptr<ConnectalMemory> data_;
+  shared_ptr<ConnectalMemory> diff_;
   vector<int> shape_;
   int count_;
   int capacity_;
