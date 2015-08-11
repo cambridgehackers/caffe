@@ -43,14 +43,6 @@ template <typename Dtype>
     param->pad_w_ = base->pad_w_;
     param->stride_h_ = base->stride_h_;
     param->stride_w_ = base->stride_w_;
-    // legacy
-    param->col_buffer_ = base->col_buffer_.mutable_cpu_data();
-    param->is_1x1_ = base->is_1x1_;
-    param->bottom_mult = bottom[0]->offset(1);
-    param->top_mult = top[0]->offset(1);
-    param->param_propagate_down_[0] = base->param_propagate_down_[0];
-    param->param_propagate_down_[1] = base->param_propagate_down_[1];
-    param->col_offset_ = base->col_offset_;
 
     // memory
     size_t currentIndex = sizeof(Dtype); /* Save 'offset == 0' for 'NULL' pointer */
