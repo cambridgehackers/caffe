@@ -46,23 +46,26 @@ template <typename Dtype>
 
     // memory
     size_t currentIndex = sizeof(Dtype); /* Save 'offset == 0' for 'NULL' pointer */
-#define SETOFFSET(TARGET, A) { \
-        TARGET = currentIndex;\
-        currentIndex += ((((A)->size() + sizeof(double) - 1)/sizeof(double)) * sizeof(double)); \
-        }
-    SETOFFSET(param->weight, base->blobs_[0]->data());
+#define SETOFFSET(TARGET, A) { TARGET = currentIndex; currentIndex += ((A)->size());  }
+    /* area to zero out on backward pass */
+    param->zero_region = currentIndex;
     SETOFFSET(param->weight_diff, base->blobs_[0]->diff());
-    for (int i = 0; i < param->bottom_size; i++) {
-        SETOFFSET(param->bottom[i], bottom[i]->data());
+    for (int i = 0; i < param->bottom_size; i++)
         SETOFFSET(param->bottom_diff[i], bottom[i]->diff());
-    }
-    for (int i = 0; i < param->top_size; i++) {
+    if (base->bias_term_)
+        SETOFFSET(param->bias_diff, base->blobs_[1]->diff());
+    param->zero_region_len = currentIndex - param->zero_region;
+    /* end of zero area */
+
+    SETOFFSET(param->weight, base->blobs_[0]->data());
+    for (int i = 0; i < param->bottom_size; i++)
+        SETOFFSET(param->bottom[i], bottom[i]->data());
+    for (int i = 0; i < param->top_size; i++)
         SETOFFSET(param->top[i], top[i]->data());
+    for (int i = 0; i < param->top_size; i++)
         SETOFFSET(param->top_diff[i], top[i]->diff());
-    }
     if (base->bias_term_) {
         SETOFFSET(param->bias, base->blobs_[1]->data());
-        SETOFFSET(param->bias_diff, base->blobs_[1]->diff());
         SETOFFSET(param->bias_multiplier_, base->bias_multiplier_.data());
     }
     param->basePtr = (uint8_t *)alloc_portal_memory(currentIndex, 1/*cached*/, &param->portalFd_);
@@ -70,14 +73,14 @@ printf("[%s:%d] len %ld\n", __FUNCTION__, __LINE__, (long)currentIndex);
 #define SETPTR(TARGET, A) (A)->set_cpu_data(CACCESS(TARGET));
     SETPTR(param->weight, base->blobs_[0]->data());
     SETPTR(param->weight_diff, base->blobs_[0]->diff());
-    for (int i = 0; i < param->bottom_size; i++) {
+    for (int i = 0; i < param->bottom_size; i++)
         SETPTR(param->bottom[i], bottom[i]->data());
+    for (int i = 0; i < param->bottom_size; i++)
         SETPTR(param->bottom_diff[i], bottom[i]->diff());
-    }
-    for (int i = 0; i < param->top_size; i++) {
+    for (int i = 0; i < param->top_size; i++)
         SETPTR(param->top[i], top[i]->data());
+    for (int i = 0; i < param->top_size; i++)
         SETPTR(param->top_diff[i], top[i]->diff());
-    }
     if (base->bias_term_) {
         SETPTR(param->bias, base->blobs_[1]->data());
         SETPTR(param->bias_diff, base->blobs_[1]->diff());
