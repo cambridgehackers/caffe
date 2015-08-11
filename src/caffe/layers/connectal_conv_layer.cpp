@@ -53,47 +53,43 @@ template <typename Dtype>
     param->col_offset_ = base->col_offset_;
 
     // memory
-    size_t len = 0, currentIndex = 0;
-#define ROUNDLEN(A) ((((A)->size() + sizeof(double) - 1)/sizeof(double)) * sizeof(double))
-    len += ROUNDLEN(base->blobs_[0]->data());
-    len += ROUNDLEN(base->blobs_[0]->diff());
-    for (int i = 0; i < param->bottom_size; i++) {
-        len += ROUNDLEN(bottom[i]->data());
-        len += ROUNDLEN(bottom[i]->diff());
-    }
-    for (int i = 0; i < param->top_size; i++) {
-        len += ROUNDLEN(top[i]->data());
-        len += ROUNDLEN(top[i]->diff());
-    }
-    if (base->bias_term_) {
-        len += ROUNDLEN(base->blobs_[1]->data());
-        len += ROUNDLEN(base->blobs_[1]->diff());
-        len += ROUNDLEN(base->bias_multiplier_.data());
-    }
-    //
-    len++;
-    param->basePtr = (uint8_t *)alloc_portal_memory(len * sizeof(Dtype), 1/*cached*/, &param->portalFd_);
-    currentIndex += sizeof(Dtype);
-printf("[%s:%d] len %ld\n", __FUNCTION__, __LINE__, (long)len);
-#define PTRINC(TARGET, A) { \
-        (A)->set_cpu_data(CACCESS(currentIndex)); \
+    size_t currentIndex = sizeof(Dtype); /* Save 'offset == 0' for 'NULL' pointer */
+#define SETOFFSET(TARGET, A) { \
         TARGET = currentIndex;\
-        currentIndex += ROUNDLEN(A); \
+        currentIndex += ((((A)->size() + sizeof(double) - 1)/sizeof(double)) * sizeof(double)); \
         }
-    PTRINC(param->weight, base->blobs_[0]->data());
-    PTRINC(param->weight_diff, base->blobs_[0]->diff());
+    SETOFFSET(param->weight, base->blobs_[0]->data());
+    SETOFFSET(param->weight_diff, base->blobs_[0]->diff());
     for (int i = 0; i < param->bottom_size; i++) {
-        PTRINC(param->bottom[i], bottom[i]->data());
-        PTRINC(param->bottom_diff[i], bottom[i]->diff());
+        SETOFFSET(param->bottom[i], bottom[i]->data());
+        SETOFFSET(param->bottom_diff[i], bottom[i]->diff());
     }
     for (int i = 0; i < param->top_size; i++) {
-        PTRINC(param->top[i], top[i]->data());
-        PTRINC(param->top_diff[i], top[i]->diff());
+        SETOFFSET(param->top[i], top[i]->data());
+        SETOFFSET(param->top_diff[i], top[i]->diff());
     }
     if (base->bias_term_) {
-        PTRINC(param->bias, base->blobs_[1]->data());
-        PTRINC(param->bias_diff, base->blobs_[1]->diff());
-        PTRINC(param->bias_multiplier_, base->bias_multiplier_.data());
+        SETOFFSET(param->bias, base->blobs_[1]->data());
+        SETOFFSET(param->bias_diff, base->blobs_[1]->diff());
+        SETOFFSET(param->bias_multiplier_, base->bias_multiplier_.data());
+    }
+    param->basePtr = (uint8_t *)alloc_portal_memory(currentIndex, 1/*cached*/, &param->portalFd_);
+printf("[%s:%d] len %ld\n", __FUNCTION__, __LINE__, (long)currentIndex);
+#define SETPTR(TARGET, A) (A)->set_cpu_data(CACCESS(TARGET));
+    SETPTR(param->weight, base->blobs_[0]->data());
+    SETPTR(param->weight_diff, base->blobs_[0]->diff());
+    for (int i = 0; i < param->bottom_size; i++) {
+        SETPTR(param->bottom[i], bottom[i]->data());
+        SETPTR(param->bottom_diff[i], bottom[i]->diff());
+    }
+    for (int i = 0; i < param->top_size; i++) {
+        SETPTR(param->top[i], top[i]->data());
+        SETPTR(param->top_diff[i], top[i]->diff());
+    }
+    if (base->bias_term_) {
+        SETPTR(param->bias, base->blobs_[1]->data());
+        SETPTR(param->bias_diff, base->blobs_[1]->diff());
+        SETPTR(param->bias_multiplier_, base->bias_multiplier_.data());
     }
     return param;
 }
