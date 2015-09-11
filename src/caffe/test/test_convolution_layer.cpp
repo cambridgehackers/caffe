@@ -269,6 +269,10 @@ TYPED_TEST(ConvolutionLayerTest, TestSimpleConvolutionGroup) {
   ref_top_data = this->ref_blob_top_->cpu_data();
   for (int i = 0; i < this->blob_top_->count(); ++i) {
     EXPECT_NEAR(top_data[i], ref_top_data[i], 1e-4);
+    if(abs(top_data[i] - ref_top_data[i]) > 1e-4) {
+printf("[%s:%d] i %d\n", __FUNCTION__, __LINE__, i);
+exit(-1);
+    }
   }
 }
 
